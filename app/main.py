@@ -1,4 +1,5 @@
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from app.routers import usuarios, empresas, locaciones, areas, categorias, actividades, lista_actividades, historial
 from app.auth import routes as auth_routes
 from app.database import Base, engine
@@ -9,6 +10,16 @@ Base.metadata.create_all(bind=engine)
 
 app = FastAPI()
 
+# Configurar CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Aquí puedes poner la URL de tu frontend en vez de "*"
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Incluir rutas
 app.include_router(auth_routes.router)
 app.include_router(usuarios.router)
 app.include_router(empresas.router)

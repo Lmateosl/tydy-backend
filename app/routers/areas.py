@@ -10,6 +10,16 @@ from ..models import Usuario
 
 router = APIRouter(prefix="/areas", tags=["Áreas"])
 
+# obtener todas las areas creadas por el usuario
+@router.get("/usuario/", response_model=list[AreaOut])
+def obtener_areas_usuario(
+    db: Session = Depends(get_db),
+    current_user: Usuario = Security(get_current_user)
+):
+    # Obtener las áreas creadas por el usuario
+    areas = db.query(Area).filter(Area.usuario_id == current_user.id).all()
+    return areas
+
 # Crear área
 @router.post("/", response_model=AreaOut, status_code=status.HTTP_201_CREATED)
 def crear_area(
@@ -92,7 +102,7 @@ def editar_area(
     db: Session = Depends(get_db),
     current_user: Usuario = Security(get_current_user)
 ):
-    # Verificar si la locación existe
+    # Verificar si la locación actual existe (puede ser opcional si locacion_id cambia)
     locacion = db.query(Locacion).filter(
         Locacion.id == locacion_id,
         Locacion.company_id == current_user.company_id
@@ -101,15 +111,24 @@ def editar_area(
         raise HTTPException(status_code=404, detail="Locación no encontrada")
     
     # Obtener el área
-    area = db.query(Area).filter(Area.id == area_id, Area.locacion_id == locacion_id).first()
+    area = db.query(Area).filter(Area.id == area_id).first()
     if not area:
         raise HTTPException(status_code=404, detail="Área no encontrada")
     
-    if current_user.rol not in ["admin"]:
+    if current_user.rol != "admin":
         raise HTTPException(status_code=403, detail="No tienes permisos")
-    
-    # Actualizar el área
-    for key, value in data.dict().items():
+
+    # Validar nueva locación si se desea mover
+    if data.locacion_id:
+        nueva_loc = db.query(Locacion).filter(
+            Locacion.id == data.locacion_id,
+            Locacion.company_id == current_user.company_id
+        ).first()
+        if not nueva_loc:
+            raise HTTPException(status_code=400, detail="Nueva locación no válida para tu empresa")
+
+    # Actualizar campos enviados
+    for key, value in data.dict(exclude_unset=True).items():
         setattr(area, key, value)
     
     db.commit()
@@ -145,15 +164,6 @@ def eliminar_area(
     db.commit()
     return {"detail": "Área eliminada con éxito"}
 
-# obtener todas las areas creadas por el usuario
-@router.get("/usuario/", response_model=list[AreaOut])
-def obtener_areas_usuario(
-    db: Session = Depends(get_db),
-    current_user: Usuario = Security(get_current_user)
-):
-    # Obtener las áreas creadas por el usuario
-    areas = db.query(Area).filter(Area.usuario_id == current_user.id).all()
-    return areas
 
 # obtener todos los usuarios de un área
 @router.get("/{locacion_id}/{area_id}/usuarios/", response_model=list[UsuarioResponse])

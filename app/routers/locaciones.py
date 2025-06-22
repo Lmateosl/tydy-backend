@@ -20,6 +20,12 @@ def crear_locacion(
     if current_user.rol != "admin":
         raise HTTPException(status_code=403, detail="No tienes permisos")
     
+    if data.latitud is not None and not (-90 <= data.latitud <= 90):
+        raise HTTPException(status_code=400, detail="La latitud debe estar entre -90 y 90")
+
+    if data.longitud is not None and not (-180 <= data.longitud <= 180):
+        raise HTTPException(status_code=400, detail="La longitud debe estar entre -180 y 180")
+    
     locacion = Locacion(**data.dict(), usuario_id=current_user.id, company_id=current_user.company_id)
     db.add(locacion)
     db.commit()
@@ -62,6 +68,12 @@ def actualizar_locacion(
 ):
     if current_user.rol != "admin":
         raise HTTPException(status_code=403, detail="No tienes permisos")
+    
+    if data.latitud is not None and not (-90 <= data.latitud <= 90):
+        raise HTTPException(status_code=400, detail="La latitud debe estar entre -90 y 90")
+
+    if data.longitud is not None and not (-180 <= data.longitud <= 180):
+        raise HTTPException(status_code=400, detail="La longitud debe estar entre -180 y 180")
     
     locacion = db.query(Locacion).filter(
         Locacion.id == locacion_id,

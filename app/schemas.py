@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field
 from typing import Optional
 from uuid import UUID
 from datetime import datetime
@@ -189,7 +189,7 @@ class ListaActividadCreate(BaseModel):
     codeout: Optional[bool] = False
     qrin: Optional[bool] = True
     qrout: Optional[bool] = False
-    actividad_ids: Optional[List[UUID]] = []
+    actividad_ids: Optional[List[UUID]] = Field(default_factory=list)
     imagen: Optional[bool] = False
 
 class ListaActividadUpdate(BaseModel):
@@ -198,7 +198,7 @@ class ListaActividadUpdate(BaseModel):
     qrin: Optional[bool] = True
     qrout: Optional[bool] = False
     codeout: Optional[bool] = False
-    actividad_ids: Optional[List[UUID]]
+    actividad_ids: Optional[List[UUID]] = None
     imagen: Optional[bool] = False
 
 class ListaActividadResponse(BaseModel):
@@ -220,8 +220,6 @@ class ListaActividadResponse(BaseModel):
 # Actividades Usuario
 class ActividadUsuarioBase(BaseModel):
     lista_id: Optional[UUID] = None
-    hora_inicio: Optional[datetime] = None
-    hora_fin: Optional[datetime] = None
     finalizada: Optional[bool] = False
     comentario: Optional[str] = None
 
@@ -240,10 +238,34 @@ class ActividadUsuarioResponse(ActividadUsuarioBase):
     class Config:
         from_attributes = True
 
+class EmpresaMini(BaseModel):
+    id: UUID
+    nombre: str
+
+    class Config:
+        from_attributes = True
+
+class LocacionMini(BaseModel):
+    id: UUID
+    nombre: str
+    empresa: EmpresaMini
+
+    class Config:
+        from_attributes = True
+
+class AreaMini(BaseModel):
+    id: UUID
+    nombre: str
+    locacion: LocacionMini
+
+    class Config:
+        from_attributes = True
+
 class ActividadUsuarioUsuario(BaseModel):
     id: UUID
     nombre: str
     identificacion: Optional[str] = None
+    area: Optional[AreaMini]
 
     class Config:
         from_attributes = True
@@ -270,8 +292,8 @@ class ActividadUsuarioResponseExtendido(BaseModel):
     finalizada: Optional[bool]
     comentario: Optional[str]
     imagen: Optional[str]
-    
-    usuario: ActividadUsuarioUsuario
+
+    usuario: ActividadUsuarioUsuario  # Aquí viene toda la jerarquía: area, locacion, empresa
     lista: Optional[ActividadUsuarioListaConActividades]
 
     class Config:

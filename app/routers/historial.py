@@ -6,7 +6,7 @@ from uuid import UUID
 from datetime import datetime
 from fastapi.responses import StreamingResponse
 from app.database import get_db
-from app.models import ActividadUsuario, Usuario, ListaActividad
+from app.models import ActividadUsuario, Usuario, ListaActividad, Area, Empresa, Locacion
 from app.schemas import ActividadUsuarioCreate, ActividadUsuarioResponse, ActividadUsuarioUpdate, ActividadUsuarioResponseExtendido, ActividadFinalizar
 from app.auth.dependencies import get_current_user
 import io
@@ -47,7 +47,7 @@ def crear_actividad(
     
     nueva = ActividadUsuario(
         **actividad.dict(exclude_unset=True),
-        hora_inicio=actividad.hora_inicio or datetime.utcnow(),
+        hora_inicio=datetime.utcnow(),
         company_id=current_user.company_id,
         usuario_id=current_user.id
     )
@@ -55,6 +55,80 @@ def crear_actividad(
     db.commit()
     db.refresh(nueva)
     return nueva
+
+@router.get("/exportar")
+def exportar_actividades(
+    usuario_id: Optional[UUID] = Query(None),
+    finalizada: Optional[bool] = Query(None),
+    desde: Optional[datetime] = Query(None),
+    hasta: Optional[datetime] = Query(None),
+    formato: str = Query("excel"),
+    db: Session = Depends(get_db),
+    current_user: Usuario = Security(get_current_user),
+):
+    query = db.query(ActividadUsuario).filter(
+        ActividadUsuario.company_id == current_user.company_id
+    ).options(
+        joinedload(ActividadUsuario.usuario)
+            .joinedload(Usuario.area)
+            .joinedload(Area.locacion)
+            .joinedload(Locacion.empresa),
+        joinedload(ActividadUsuario.lista).joinedload(ListaActividad.actividades)
+    )
+
+    if usuario_id:
+        query = query.filter(ActividadUsuario.usuario_id == usuario_id)
+    if finalizada is not None:
+        query = query.filter(ActividadUsuario.finalizada == finalizada)
+    if desde:
+        query = query.filter(ActividadUsuario.hora_inicio >= desde)
+    if hasta:
+        query = query.filter(ActividadUsuario.hora_inicio <= hasta)
+
+    actividades = query.order_by(ActividadUsuario.hora_inicio.desc()).all()
+
+    data = []
+    for act in actividades:
+        area = act.usuario.area if act.usuario and act.usuario.area else None
+        locacion = area.locacion if area and area.locacion else None
+        empresa = locacion.empresa if locacion and locacion.empresa else None
+
+        data.append({
+            "ID Actividad": str(act.id),
+            "Usuario": act.usuario.nombre if act.usuario else None,
+            "Identificación": act.usuario.identificacion if act.usuario else None,
+            "Área": area.nombre if area else None,
+            "Locación": locacion.nombre if locacion else None,
+            "Empresa": empresa.nombre if empresa else None,
+            "Hora Inicio": act.hora_inicio,
+            "Hora Fin": act.hora_fin,
+            "Finalizada": act.finalizada,
+            "Comentario": act.comentario,
+            "Lista Actividad": act.lista.nombre if act.lista else None,
+            "Actividades en Lista": ", ".join([a.nombre for a in act.lista.actividades]) if act.lista else None
+        })
+
+    df = pd.DataFrame(data)
+
+    if formato == "csv":
+        stream = io.StringIO()
+        df.to_csv(stream, index=False)
+        stream.seek(0)
+        return StreamingResponse(
+            iter([stream.getvalue()]),
+            media_type="text/csv",
+            headers={"Content-Disposition": "attachment; filename=actividades.csv"}
+        )
+    else:
+        stream = io.BytesIO()
+        with pd.ExcelWriter(stream, engine='openpyxl') as writer:
+            df.to_excel(writer, index=False, sheet_name="Actividades")
+        stream.seek(0)
+        return StreamingResponse(
+            stream,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": "attachment; filename=actividades.xlsx"}
+        )
 
 @router.get("/{actividad_id}", response_model=ActividadUsuarioResponse)
 def obtener_actividad(
@@ -167,7 +241,13 @@ def listar_actividades(
         ActividadUsuario.company_id == current_user.company_id
     ).options(
         joinedload(ActividadUsuario.usuario),
-        joinedload(ActividadUsuario.lista).joinedload(ListaActividad.actividades)
+        joinedload(ActividadUsuario.lista).joinedload(ListaActividad.actividades),
+        joinedload(ActividadUsuario.usuario)
+            .joinedload(Usuario.area)
+            .joinedload(Area.locacion)
+            .joinedload(Locacion.empresa),
+        joinedload(ActividadUsuario.lista)
+            .joinedload(ListaActividad.actividades)
     )
 
     if usuario_id:
@@ -181,63 +261,3 @@ def listar_actividades(
 
     resultados = query.order_by(ActividadUsuario.hora_inicio.desc()).all()
     return resultados
-
-@router.get("/exportar")
-def exportar_actividades(
-    usuario_id: Optional[UUID] = Query(None),
-    finalizada: Optional[bool] = Query(None),
-    desde: Optional[datetime] = Query(None),
-    hasta: Optional[datetime] = Query(None),
-    formato: str = Query("excel"),
-    db: Session = Depends(get_db),
-    current_user: Usuario = Security(get_current_user),
-):
-    query = db.query(ActividadUsuario).filter(
-        ActividadUsuario.company_id == current_user.company_id
-    ).options(
-        joinedload(ActividadUsuario.usuario),
-        joinedload(ActividadUsuario.lista).joinedload(ListaActividad.actividades)
-    )
-
-    if usuario_id:
-        query = query.filter(ActividadUsuario.usuario_id == usuario_id)
-    if finalizada is not None:
-        query = query.filter(ActividadUsuario.finalizada == finalizada)
-    if desde:
-        query = query.filter(ActividadUsuario.hora_inicio >= desde)
-    if hasta:
-        query = query.filter(ActividadUsuario.hora_inicio <= hasta)
-
-    actividades = query.order_by(ActividadUsuario.hora_inicio.desc()).all()
-
-    # Transformamos los datos a una lista de dicts
-    data = []
-    for act in actividades:
-        data.append({
-            "ID Actividad": str(act.id),
-            "Usuario": act.usuario.nombre if act.usuario else None,
-            "Identificación": act.usuario.identificacion if act.usuario else None,
-            "Hora Inicio": act.hora_inicio,
-            "Hora Fin": act.hora_fin,
-            "Finalizada": act.finalizada,
-            "Comentario": act.comentario,
-            "Lista Actividad": act.lista.nombre if act.lista else None,
-            "Actividades en Lista": ", ".join([a.nombre for a in act.lista.actividades]) if act.lista else None
-        })
-
-    df = pd.DataFrame(data)
-
-    if formato == "csv":
-        stream = io.StringIO()
-        df.to_csv(stream, index=False)
-        stream.seek(0)
-        return StreamingResponse(iter([stream.getvalue()]), media_type="text/csv",
-                                 headers={"Content-Disposition": "attachment; filename=actividades.csv"})
-    else:
-        stream = io.BytesIO()
-        with pd.ExcelWriter(stream, engine='openpyxl') as writer:
-            df.to_excel(writer, index=False, sheet_name="Actividades")
-        stream.seek(0)
-        return StreamingResponse(stream,
-                                 media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                                 headers={"Content-Disposition": "attachment; filename=actividades.xlsx"})

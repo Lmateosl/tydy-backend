@@ -54,6 +54,7 @@ class Usuario(Base):
     supervisor = relationship("Usuario", remote_side=[id], backref="subordinados", foreign_keys=[supervisor_id])
     creador = relationship("Usuario", remote_side=[id], backref="usuarios_creados", foreign_keys=[creado_por])
     own_company = relationship("Company", back_populates="usuarios", foreign_keys=[company_id])
+    area = relationship("Area", back_populates="usuarios", foreign_keys=[area_id])
 
 class Empresa(Base):
     __tablename__ = "empresas"
@@ -96,6 +97,7 @@ class Area(Base):
     usuario_id = Column(UUID(as_uuid=True), ForeignKey("usuarios.id"), nullable=False)
     creado_en = Column(DateTime, default=datetime.utcnow)
     company_id = Column(UUID(as_uuid=True), ForeignKey("companies.id"), nullable=True)
+    usuarios = relationship("Usuario", back_populates="area", foreign_keys=[Usuario.area_id])
 
     # Relaciones
     own_company = relationship("Company", back_populates="areas", foreign_keys=[company_id])

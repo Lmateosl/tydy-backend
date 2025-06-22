@@ -36,6 +36,41 @@ def comprimir_imagen(imagen_path: str, calidad: int = 75, max_ancho: int = 500):
 def obtener_perfil(usuario: Usuario = Depends(get_current_user)):
     return {"nombre": usuario.nombre, "email": usuario.email, "rol": usuario.rol, "id": usuario.id}
 
+@router.get("/mis-usuarios", response_model=List[schemas.UsuarioResponse])
+def obtener_usuarios_creados_por_mi(
+    db: Session = Depends(get_db),
+    current_user: Usuario = Security(get_current_user),
+):
+    return db.query(models.Usuario).filter(models.Usuario.creado_por == current_user.id).all()
+
+@router.get("/mis-empresas", response_model=List[schemas.EmpresaResponse])
+def obtener_empresas_creadas(
+    db: Session = Depends(get_db),
+    current_user: Usuario = Security(get_current_user),
+):
+    return db.query(Empresa).filter(Empresa.usuario_id == current_user.id).all()
+
+@router.get("/mis-categorias", response_model=List[schemas.CategoriaResponse])
+def obtener_categorias_creadas(
+    db: Session = Depends(get_db),
+    current_user: Usuario = Security(get_current_user),
+):
+    return db.query(Categoria).filter(Categoria.usuario_id == current_user.id).all()
+
+@router.get("/mis-actividades", response_model=List[schemas.ActividadResponse])
+def obtener_actividades_creadas(
+    db: Session = Depends(get_db),
+    current_user: Usuario = Security(get_current_user),
+):
+    return db.query(Actividad).filter(Actividad.usuario_id == current_user.id).all()
+
+@router.get("/mis-listas-actividades", response_model=List[schemas.ListaActividadResponse])
+def obtener_listas_actividades_creadas(
+    db: Session = Depends(get_db),
+    current_user: Usuario = Security(get_current_user),
+):
+    return db.query(ListaActividad).filter(ListaActividad.usuario_id == current_user.id).all()
+
 @router.post("/", response_model=schemas.UsuarioResponse)
 def crear_usuario(
     nombre: str = Form(...),
@@ -222,38 +257,3 @@ def obtener_usuario(
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
 
     return db_usuario
-
-@router.get("/mis-usuarios", response_model=List[schemas.UsuarioResponse])
-def obtener_usuarios_creados_por_mi(
-    db: Session = Depends(get_db),
-    current_user: Usuario = Security(get_current_user),
-):
-    return db.query(models.Usuario).filter(models.Usuario.creado_por == current_user.id).all()
-
-@router.get("/mis-empresas", response_model=List[schemas.EmpresaResponse])
-def obtener_empresas_creadas(
-    db: Session = Depends(get_db),
-    current_user: Usuario = Security(get_current_user),
-):
-    return db.query(Empresa).filter(Empresa.usuario_id == current_user.id).all()
-
-@router.get("/mis-categorias", response_model=List[schemas.CategoriaResponse])
-def obtener_categorias_creadas(
-    db: Session = Depends(get_db),
-    current_user: Usuario = Security(get_current_user),
-):
-    return db.query(Categoria).filter(Categoria.usuario_id == current_user.id).all()
-
-@router.get("/mis-actividades", response_model=List[schemas.ActividadResponse])
-def obtener_actividades_creadas(
-    db: Session = Depends(get_db),
-    current_user: Usuario = Security(get_current_user),
-):
-    return db.query(Actividad).filter(Actividad.usuario_id == current_user.id).all()
-
-@router.get("/mis-listas-actividades", response_model=List[schemas.ListaActividadResponse])
-def obtener_listas_actividades_creadas(
-    db: Session = Depends(get_db),
-    current_user: Usuario = Security(get_current_user),
-):
-    return db.query(ListaActividad).filter(ListaActividad.usuario_id == current_user.id).all()
