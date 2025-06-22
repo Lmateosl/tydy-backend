@@ -1,0 +1,174 @@
+from fastapi import APIRouter, Depends, HTTPException, Security, Path
+from sqlalchemy.orm import Session
+from sqlalchemy import or_
+from uuid import UUID
+from ..database import get_db
+from .. import models, schemas
+from ..auth.dependencies import get_current_user
+from ..models import Usuario
+import qrcode
+import base64
+from io import BytesIO
+import random
+import string
+
+# Función auxiliar para generar código de 6 dígitos
+def generar_codigo():
+    return ''.join(random.choices(string.digits, k=6))
+
+# Función auxiliar para generar QR como base64
+def generar_qr_base64(data: dict) -> str:
+    qr = qrcode.make(data)
+    buffer = BytesIO()
+    qr.save(buffer, format="PNG")
+    return base64.b64encode(buffer.getvalue()).decode("utf-8")
+
+router = APIRouter(prefix="/listas_actividades", tags=["Listas de Actividades"])
+
+# Crear lista
+@router.post("/", response_model=schemas.ListaActividadResponse)
+def crear_lista(
+    lista: schemas.ListaActividadCreate,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Security(get_current_user),
+):
+    if current_user.rol.lower() not in ["admin", "supervisor"]:
+        raise HTTPException(status_code=403, detail="No tienes permisos para crear listas")
+
+    actividades = []
+    if lista.actividad_ids:
+        actividades = db.query(models.Actividad).filter(
+            models.Actividad.id.in_(lista.actividad_ids),
+            models.Actividad.company_id == current_user.company_id
+        ).all()
+        if len(actividades) != len(lista.actividad_ids):
+            raise HTTPException(status_code=404, detail="Alguna actividad no encontrada")
+
+    nueva_lista = models.ListaActividad(
+        nombre=lista.nombre,
+        usuario_id=current_user.id,
+        actividades=actividades,
+        company_id=current_user.company_id
+    )
+
+    db.add(nueva_lista)
+    db.commit()
+    db.refresh(nueva_lista)
+
+    # Agregar códigos y QRs si se requieren
+    if lista.code:
+        nueva_lista.code = generar_codigo()
+    if lista.codeout:
+        nueva_lista.codeout = generar_codigo()
+    if lista.qrin:
+        qr_data_in = {"lista_id": str(nueva_lista.id), "finalizada": False}
+        nueva_lista.qrin = generar_qr_base64(qr_data_in)
+    if lista.qrout:
+        qr_data_out = {"lista_id": str(nueva_lista.id), "finalizada": True}
+        nueva_lista.qrout = generar_qr_base64(qr_data_out)
+
+    db.commit()
+    db.refresh(nueva_lista)
+
+    return nueva_lista
+
+# Listar listas del usuario
+@router.get("/", response_model=list[schemas.ListaActividadResponse])
+def listar_listas(
+    db: Session = Depends(get_db),
+    current_user: Usuario = Security(get_current_user),
+):
+    listas = db.query(models.ListaActividad).filter(
+        models.ListaActividad.company_id == current_user.company_id
+    ).all()
+    return listas
+
+# Obtener lista específica
+@router.get("/{lista_id}", response_model=schemas.ListaActividadResponse)
+def obtener_lista(
+    lista_id: UUID = Path(...),
+    db: Session = Depends(get_db),
+    current_user: Usuario = Security(get_current_user),
+):
+    lista = db.query(models.ListaActividad).filter(
+        models.ListaActividad.id == lista_id,
+        models.ListaActividad.company_id == current_user.company_id
+    ).first()
+    if not lista:
+        raise HTTPException(status_code=404, detail="Lista no encontrada")
+    return lista
+
+@router.put("/{lista_id}", response_model=schemas.ListaActividadResponse)
+def actualizar_lista(
+    lista_update: schemas.ListaActividadUpdate,
+    lista_id: UUID = Path(...),
+    db: Session = Depends(get_db),
+    current_user: Usuario = Security(get_current_user),
+):
+    lista = db.query(models.ListaActividad).filter(
+        models.ListaActividad.id == lista_id,
+        models.ListaActividad.company_id == current_user.company_id
+    ).first()
+
+    if not lista:
+        raise HTTPException(status_code=404, detail="Lista no encontrada")
+
+    if current_user.rol.lower() not in ["admin", "supervisor"]:
+        raise HTTPException(status_code=403, detail="No tienes permisos")
+
+    update_data = lista_update.dict(exclude_unset=True)
+
+    # Actualizar actividades
+    if "actividad_ids" in update_data:
+        actividades = db.query(models.Actividad).filter(
+            models.Actividad.id.in_(update_data["actividad_ids"]),
+            models.Actividad.company_id == current_user.company_id
+        ).all()
+        if len(actividades) != len(update_data["actividad_ids"]):
+            raise HTTPException(status_code=404, detail="Alguna actividad no encontrada")
+        lista.actividades = actividades
+
+    # Actualizar nombre
+    if "nombre" in update_data:
+        lista.nombre = update_data["nombre"]
+
+    # Generar código si se solicita
+    if update_data.get("code") is True:
+        lista.code = generar_codigo()
+
+    if update_data.get("codeout") is True:
+        lista.codeout = generar_codigo()
+
+    # Generar QR In
+    if update_data.get("qrin") is True:
+        data = f"{lista.id}-finalizada:false"
+        lista.qrin = generar_qr_base64(data)
+
+    # Generar QR Out
+    if update_data.get("qrout") is True:
+        data = f"{lista.id}-finalizada:true"
+        lista.qrout = generar_qr_base64(data)
+
+    db.commit()
+    db.refresh(lista)
+    return lista
+
+# Eliminar lista
+@router.delete("/{lista_id}")
+def eliminar_lista(
+    lista_id: UUID = Path(...),
+    db: Session = Depends(get_db),
+    current_user: Usuario = Security(get_current_user),
+):
+    lista = db.query(models.ListaActividad).filter(
+        models.ListaActividad.id == lista_id,
+    ).first()
+    if not lista:
+        raise HTTPException(status_code=404, detail="Lista no encontrada")
+    
+    if current_user.rol.lower() not in ["admin", "supervisor"]:
+        raise HTTPException(status_code=403, detail="No tienes permisos")
+
+    db.delete(lista)
+    db.commit()
+    return {"detalle": "Lista eliminada correctamente"}
