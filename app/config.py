@@ -1,15 +1,13 @@
+import os
 from fastapi_mail import ConnectionConfig
-from pydantic import BaseModel, EmailStr
 
 conf = ConnectionConfig(
-    MAIL_USERNAME="mateofff97@gmail.com",
-    MAIL_PASSWORD="Supermateo@luis12",
-    MAIL_FROM="mateofff97@gmail.com",
-    MAIL_SERVER="smtp.gmail.com",
-    MAIL_FROM_NAME="Sistema de Actividades",
-    MAIL_STARTTLS = True,
-    MAIL_SSL_TLS = False,
-    MAIL_PORT = 587,
-    USE_CREDENTIALS=True,
-    VALIDATE_CERTS=True
+    MAIL_USERNAME=os.getenv("MAIL_USERNAME"),
+    MAIL_PASSWORD=os.getenv("MAIL_PASSWORD"),
+    MAIL_FROM=os.getenv("MAIL_FROM"),
+    MAIL_PORT=int(os.getenv("MAIL_PORT")),
+    MAIL_SERVER=os.getenv("MAIL_SERVER"),
+    MAIL_STARTTLS=os.getenv("MAIL_STARTTLS") == "True",
+    MAIL_SSL_TLS=os.getenv("MAIL_SSL_TLS") == "True",
+    USE_CREDENTIALS=True
 )

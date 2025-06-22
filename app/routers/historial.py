@@ -219,9 +219,9 @@ def finalizar_actividad(
 
     if actividad.comentario:
         message = MessageSchema(
-            subject="Finalizar actividad",
+            subject="Alerta al finalizar actividad",
             recipients=["mateosan67@gmail.com"],
-            body=f"El usuario {current_user.nombre} finalizó una actividad y dejó un comentario:\n\n{actividad.comentario}",
+            body=f"El usuario {current_user.nombre} con número de identificación: {current_user.identificacion} finalizó una actividad y dejó un comentario:\n\n{actividad.comentario}.\n\n Entra en la plataforma para mis información",
             subtype=MessageType.plain
         )
         fm = FastMail(conf)
