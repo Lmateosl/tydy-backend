@@ -33,8 +33,9 @@ def comprimir_imagen(imagen_path: str, calidad: int = 75, max_ancho: int = 500):
         print("Error al comprimir imagen:", e)
 
 @router.get("/perfil", response_model=schemas.me)
-def obtener_perfil(usuario: Usuario = Depends(get_current_user)):
-    return {"nombre": usuario.nombre, "email": usuario.email, "rol": usuario.rol, "id": usuario.id}
+def obtener_perfil(db: Session = Depends(get_db), current_user: Usuario = Depends(get_current_user)):
+    usuario = db.query(models.Usuario).filter(models.Usuario.id == current_user.id).first()
+    return usuario
 
 @router.get("/mis-usuarios", response_model=List[schemas.UsuarioResponse])
 def obtener_usuarios_creados_por_mi(

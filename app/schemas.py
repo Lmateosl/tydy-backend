@@ -41,6 +41,12 @@ class me(BaseModel):
     email: str
     nombre: str
     id: UUID
+    numero: Optional[str] = None
+    direccion: Optional[str] = None
+    foto: Optional[str] = None
+    area_id: Optional[UUID] = None
+    supervisor_id: Optional[UUID] = None
+    identificacion: Optional[str] = None
 
 class UsuarioUpdate(BaseModel):
     nombre: Optional[str] = None
