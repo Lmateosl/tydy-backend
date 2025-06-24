@@ -32,7 +32,6 @@ class UsuarioResponse(BaseModel):
     area_id: Optional[UUID] = None
     supervisor_id: Optional[UUID] = None
     creado_por: Optional[UUID] = None
-    empresa_nombre: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -49,6 +48,7 @@ class me(BaseModel):
     area_id: Optional[UUID] = None
     supervisor_id: Optional[UUID] = None
     identificacion: Optional[str] = None
+    empresa_nombre: Optional[str] = None
 
 class UsuarioUpdate(BaseModel):
     nombre: Optional[str] = None

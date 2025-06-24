@@ -43,6 +43,7 @@ def obtener_perfil(db: Session = Depends(get_db), current_user: Usuario = Depend
         "nombre": usuario.nombre,
         "id": usuario.id,
         "numero": usuario.numero,
+        "company_id": usuario.company_id,
         "direccion": usuario.direccion,
         "foto": usuario.foto,
         "area_id": usuario.area_id,
