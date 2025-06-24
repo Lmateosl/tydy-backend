@@ -8,6 +8,7 @@ from app.routers import usuarios, empresas, locaciones, areas, categorias, activ
 from app.auth import routes as auth_routes
 from app.database import Base, engine
 from app import models
+from fastapi.staticfiles import StaticFiles
 
 # Crear las tablas en la base de datos
 Base.metadata.create_all(bind=engine)
@@ -32,6 +33,9 @@ app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 app.add_middleware(SlowAPIMiddleware)
 
+# Montar carpeta de imágenes públicas
+app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
+
 # Incluir rutas
 app.include_router(auth_routes.router)
 app.include_router(usuarios.router)
@@ -46,6 +50,3 @@ app.include_router(historial.router)
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True)
-
-
-# Comentario para deploy despues lo borro
