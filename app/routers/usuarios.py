@@ -35,7 +35,21 @@ def comprimir_imagen(imagen_path: str, calidad: int = 75, max_ancho: int = 500):
 @router.get("/perfil", response_model=schemas.me)
 def obtener_perfil(db: Session = Depends(get_db), current_user: Usuario = Depends(get_current_user)):
     usuario = db.query(models.Usuario).filter(models.Usuario.id == current_user.id).first()
-    return usuario
+    empresa = db.query(models.Company).filter(models.Company.id == current_user.company_id).first()
+
+    return {
+        "rol": usuario.rol,
+        "email": usuario.email,
+        "nombre": usuario.nombre,
+        "id": usuario.id,
+        "numero": usuario.numero,
+        "direccion": usuario.direccion,
+        "foto": usuario.foto,
+        "area_id": usuario.area_id,
+        "supervisor_id": usuario.supervisor_id,
+        "identificacion": usuario.identificacion,
+        "empresa_nombre": empresa.nombre if empresa else None
+    }
 
 @router.get("/mis-usuarios", response_model=List[schemas.UsuarioResponse])
 def obtener_usuarios_creados_por_mi(
