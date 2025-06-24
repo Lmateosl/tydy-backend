@@ -41,6 +41,7 @@ class me(BaseModel):
     email: str
     nombre: str
     id: UUID
+    company_id: UUID
     numero: Optional[str] = None
     direccion: Optional[str] = None
     foto: Optional[str] = None
