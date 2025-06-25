@@ -3,6 +3,7 @@ annotated-types==0.7.0
 anyio==4.9.0
 bcrypt==4.3.0
 blinker==1.9.0
+certifi==2025.6.15
 click==8.2.1
 Deprecated==1.2.18
 dnspython==2.7.0
@@ -12,6 +13,8 @@ et_xmlfile==2.0.0
 fastapi==0.115.13
 fastapi-mail==1.5.0
 h11==0.16.0
+httpcore==1.0.9
+httpx==0.28.1
 idna==3.10
 Jinja2==3.1.6
 limits==5.4.0
