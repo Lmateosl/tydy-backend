@@ -11,17 +11,21 @@ import base64
 from io import BytesIO
 import random
 import string
+import cloudinary.uploader
 
 # Función auxiliar para generar código de 6 dígitos
 def generar_codigo():
     return ''.join(random.choices(string.digits, k=6))
 
-# Función auxiliar para generar QR como base64
-def generar_qr_base64(data: dict) -> str:
+
+# Función auxiliar para generar QR y subirlo a Cloudinary
+def generar_qr_cloudinary(data: dict) -> str:
     qr = qrcode.make(data)
     buffer = BytesIO()
     qr.save(buffer, format="PNG")
-    return base64.b64encode(buffer.getvalue()).decode("utf-8")
+    buffer.seek(0)
+    result = cloudinary.uploader.upload(buffer, folder="listas_actividades")
+    return result["secure_url"]
 
 router = APIRouter(prefix="/listas_actividades", tags=["Listas de Actividades"])
 
@@ -57,15 +61,33 @@ def crear_lista(
 
     # Agregar códigos y QRs si se requieren
     if lista.code:
-        nueva_lista.code = generar_codigo()
+        # Validar unicidad de code en la empresa
+        while True:
+            nuevo_codigo = generar_codigo()
+            existe = db.query(models.ListaActividad).filter(
+                models.ListaActividad.company_id == current_user.company_id,
+                models.ListaActividad.code == nuevo_codigo
+            ).first()
+            if not existe:
+                nueva_lista.code = nuevo_codigo
+                break
     if lista.codeout:
-        nueva_lista.codeout = generar_codigo()
+        # Validar unicidad de codeout en la empresa
+        while True:
+            nuevo_codigoout = generar_codigo()
+            existe = db.query(models.ListaActividad).filter(
+                models.ListaActividad.company_id == current_user.company_id,
+                models.ListaActividad.codeout == nuevo_codigoout
+            ).first()
+            if not existe:
+                nueva_lista.codeout = nuevo_codigoout
+                break
     if lista.qrin:
         qr_data_in = {"lista_id": str(nueva_lista.id), "finalizada": False}
-        nueva_lista.qrin = generar_qr_base64(qr_data_in)
+        nueva_lista.qrin = generar_qr_cloudinary(qr_data_in)
     if lista.qrout:
         qr_data_out = {"lista_id": str(nueva_lista.id), "finalizada": True}
-        nueva_lista.qrout = generar_qr_base64(qr_data_out)
+        nueva_lista.qrout = generar_qr_cloudinary(qr_data_out)
 
     db.commit()
     db.refresh(nueva_lista)
@@ -134,20 +156,40 @@ def actualizar_lista(
 
     # Generar código si se solicita
     if update_data.get("code") is True:
-        lista.code = generar_codigo()
+        # Validar unicidad de code en la empresa
+        while True:
+            nuevo_codigo = generar_codigo()
+            existe = db.query(models.ListaActividad).filter(
+                models.ListaActividad.company_id == current_user.company_id,
+                models.ListaActividad.code == nuevo_codigo,
+                models.ListaActividad.id != lista.id
+            ).first()
+            if not existe:
+                lista.code = nuevo_codigo
+                break
 
     if update_data.get("codeout") is True:
-        lista.codeout = generar_codigo()
+        # Validar unicidad de codeout en la empresa
+        while True:
+            nuevo_codigoout = generar_codigo()
+            existe = db.query(models.ListaActividad).filter(
+                models.ListaActividad.company_id == current_user.company_id,
+                models.ListaActividad.codeout == nuevo_codigoout,
+                models.ListaActividad.id != lista.id
+            ).first()
+            if not existe:
+                lista.codeout = nuevo_codigoout
+                break
 
     # Generar QR In
     if update_data.get("qrin") is True:
-        data = f"{lista.id}-finalizada:false"
-        lista.qrin = generar_qr_base64(data)
+        qr_data_in = {"lista_id": str(lista.id), "finalizada": False}
+        lista.qrin = generar_qr_cloudinary(qr_data_in)
 
     # Generar QR Out
     if update_data.get("qrout") is True:
-        data = f"{lista.id}-finalizada:true"
-        lista.qrout = generar_qr_base64(data)
+        qr_data_out = {"lista_id": str(lista.id), "finalizada": True}
+        lista.qrout = generar_qr_cloudinary(qr_data_out)
 
     db.commit()
     db.refresh(lista)
@@ -172,3 +214,33 @@ def eliminar_lista(
     db.delete(lista)
     db.commit()
     return {"detalle": "Lista eliminada correctamente"}
+
+# Obtener lista por código
+@router.get("/por_codigo/{code}", response_model=schemas.ListaActividadResponse)
+def obtener_por_codigo(
+    code: str,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Security(get_current_user),
+):
+    lista = db.query(models.ListaActividad).filter(
+        models.ListaActividad.code == code,
+        models.ListaActividad.company_id == current_user.company_id
+    ).first()
+    if not lista:
+        raise HTTPException(status_code=404, detail="Lista no encontrada")
+    return lista
+
+# Obtener lista por código out
+@router.get("/por_codigoout/{codeout}", response_model=schemas.ListaActividadResponse)
+def obtener_por_codigoout(
+    codeout: str,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Security(get_current_user),
+):
+    lista = db.query(models.ListaActividad).filter(
+        models.ListaActividad.codeout == codeout,
+        models.ListaActividad.company_id == current_user.company_id
+    ).first()
+    if not lista:
+        raise HTTPException(status_code=404, detail="Lista no encontrada")
+    return lista

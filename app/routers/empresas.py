@@ -6,25 +6,9 @@ from ..database import get_db
 from .. import schemas, models
 from ..auth.dependencies import get_current_user
 from ..models import Usuario
-import shutil
-import os
-from PIL import Image
+import cloudinary.uploader
 
 router = APIRouter(prefix="/empresas", tags=["Empresas"])
-UPLOAD_DIR_EMPRESAS = "uploads/empresas"
-os.makedirs(UPLOAD_DIR_EMPRESAS, exist_ok=True)
-
-def comprimir_imagen(imagen_path: str, calidad: int = 75, max_ancho: int = 500):
-    try:
-        img = Image.open(imagen_path)
-        img = img.convert("RGB")  # fuerza a JPEG
-        if img.width > max_ancho:
-            proporcion = max_ancho / img.width
-            nuevo_alto = int(img.height * proporcion)
-            img = img.resize((max_ancho, nuevo_alto))
-        img.save(imagen_path, "JPEG", quality=calidad)
-    except Exception as e:
-        print("Error al comprimir imagen:", e)
 
 # Crear empresa
 @router.post("/", response_model=schemas.EmpresaResponse)
@@ -48,16 +32,9 @@ def crear_empresa(
     if imagen:
         if imagen.content_type not in ["image/jpeg", "image/png"]:
             raise HTTPException(status_code=400, detail="Formato de imagen no válido")
-        
-        extension = "jpg"
-        nombre_archivo = f"{uuid4()}.{extension}"
-        ruta_imagen = os.path.join(UPLOAD_DIR_EMPRESAS, nombre_archivo)
 
-        with open(ruta_imagen, "wb") as buffer:
-            shutil.copyfileobj(imagen.file, buffer)
-
-        # Comprimir imagen
-        comprimir_imagen(ruta_imagen)
+        resultado = cloudinary.uploader.upload(imagen.file, folder="empresas")
+        ruta_imagen = resultado.get("secure_url")
 
     nueva_empresa = models.Empresa(
         nombre=nombre,
@@ -122,16 +99,8 @@ def editar_empresa(
         if imagen.content_type not in ["image/jpeg", "image/png"]:
             raise HTTPException(status_code=400, detail="Formato de imagen no válido")
 
-        extension = "jpg"
-        nombre_archivo = f"{uuid4()}.{extension}"
-        ruta_imagen = os.path.join(UPLOAD_DIR_EMPRESAS, nombre_archivo)
-        os.makedirs(UPLOAD_DIR_EMPRESAS, exist_ok=True)
-
-        with open(ruta_imagen, "wb") as buffer:
-            shutil.copyfileobj(imagen.file, buffer)
-
-        comprimir_imagen(ruta_imagen)
-        empresa.imagen = ruta_imagen
+        resultado = cloudinary.uploader.upload(imagen.file, folder="empresas")
+        empresa.imagen = resultado.get("secure_url")
 
     db.commit()
     db.refresh(empresa)

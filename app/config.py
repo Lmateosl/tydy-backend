@@ -1,5 +1,9 @@
 import os
 from fastapi_mail import ConnectionConfig
+import cloudinary
+from dotenv import load_dotenv
+
+load_dotenv()
 
 conf = ConnectionConfig(
     MAIL_USERNAME=os.getenv("MAIL_USERNAME"),
@@ -10,4 +14,10 @@ conf = ConnectionConfig(
     MAIL_STARTTLS=os.getenv("MAIL_STARTTLS") == "True",
     MAIL_SSL_TLS=os.getenv("MAIL_SSL_TLS") == "True",
     USE_CREDENTIALS=True
+)
+
+cloudinary.config(
+    cloud_name=os.getenv("CLOUDINARY_CLOUD_NAME"),
+    api_key=os.getenv("CLOUDINARY_API_KEY"),
+    api_secret=os.getenv("CLOUDINARY_API_SECRET")
 )

@@ -30,6 +30,7 @@ class UsuarioResponse(BaseModel):
     foto: Optional[str] = None
     identificacion: Optional[str] = None
     area_id: Optional[UUID] = None
+    area_nombre: Optional[str] = None
     supervisor_id: Optional[UUID] = None
     creado_por: Optional[UUID] = None
 
@@ -201,7 +202,7 @@ class ListaActividadCreate(BaseModel):
     imagen: Optional[bool] = False
 
 class ListaActividadUpdate(BaseModel):
-    nombre: Optional[str]
+    nombre: Optional[str] = None
     code: Optional[bool] = False
     qrin: Optional[bool] = True
     qrout: Optional[bool] = False

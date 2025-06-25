@@ -9,6 +9,7 @@ from app.auth import routes as auth_routes
 from app.database import Base, engine
 from app import models
 from fastapi.staticfiles import StaticFiles
+from app import config
 
 # Crear las tablas en la base de datos
 Base.metadata.create_all(bind=engine)

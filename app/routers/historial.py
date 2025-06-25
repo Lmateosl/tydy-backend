@@ -14,7 +14,6 @@ from typing import List, Optional
 from sqlalchemy.orm import joinedload
 import pandas as pd
 import os
-import shutil
 from PIL import Image
 from uuid import uuid4
 
@@ -197,17 +196,12 @@ def finalizar_actividad(
         if imagen.content_type not in ["image/jpeg", "image/png"]:
             raise HTTPException(status_code=400, detail="Formato de imagen no válido")
 
-        extension = "jpg"
-        nombre_archivo = f"{uuid4}.{extension}"
-        ruta_directorio = "uploads/finalizadas"
-        os.makedirs(ruta_directorio, exist_ok=True)
-        ruta_imagen = os.path.join(ruta_directorio, nombre_archivo)
-
-        with open(ruta_imagen, "wb") as buffer:
-            shutil.copyfileobj(imagen.file, buffer)
-
-        # Comprimir la imagen (si quieres)
-        comprimir_imagen(ruta_imagen)
+        import cloudinary.uploader
+        try:
+            upload_result = cloudinary.uploader.upload(imagen.file, folder="finalizadas")
+            ruta_imagen = upload_result.get("secure_url")
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Error al subir imagen: {e}")
 
     actividad.finalizada = True
     actividad.comentario = comentario or None

@@ -14,23 +14,11 @@ from app.models import ListaActividad
 from PIL import Image
 import os, shutil
 import uuid
+import cloudinary.uploader
+from dotenv import load_dotenv
+load_dotenv()
 
 router = APIRouter(prefix="/usuarios", tags=["Usuarios"])
-UPLOAD_DIR = "uploads/fotos_usuarios"
-os.makedirs(UPLOAD_DIR, exist_ok=True)
-
-def comprimir_imagen(imagen_path: str, calidad: int = 75, max_ancho: int = 500):
-    try:
-        img = Image.open(imagen_path)
-        img = img.convert("RGB")  # fuerza a JPEG y evita errores
-        if img.width > max_ancho:
-            proporcion = max_ancho / img.width
-            nuevo_alto = int(img.height * proporcion)
-            img = img.resize((max_ancho, nuevo_alto))
-
-        img.save(imagen_path, "JPEG", quality=calidad)
-    except Exception as e:
-        print("Error al comprimir imagen:", e)
 
 @router.get("/perfil", response_model=schemas.me)
 def obtener_perfil(db: Session = Depends(get_db), current_user: Usuario = Depends(get_current_user)):
@@ -115,15 +103,11 @@ def crear_usuario(
         if foto.content_type not in ["image/jpeg", "image/png"]:
             raise HTTPException(status_code=400, detail="Formato de imagen no válido")
 
-        extension = "jpg"  # Fuerzamos JPEG
-        nombre_archivo = f"{uuid.uuid4()}.{extension}"
-        ruta_foto = os.path.join(UPLOAD_DIR, nombre_archivo)
-
-        with open(ruta_foto, "wb") as buffer:
-            shutil.copyfileobj(foto.file, buffer)
-
-        # Comprimir la imagen después de guardarla
-        comprimir_imagen(ruta_foto)
+        try:
+            upload_result = cloudinary.uploader.upload(foto.file, folder="usuarios")
+            ruta_foto = upload_result.get("secure_url")
+        except Exception as e:
+            raise HTTPException(status_code=500, detail="Error al subir imagen")
 
     nuevo_usuario = Usuario(
         nombre=nombre,
@@ -202,20 +186,11 @@ def editar_usuario(
     if foto:
         if foto.content_type not in ["image/jpeg", "image/png"]:
             raise HTTPException(status_code=400, detail="Formato de imagen no válido")
-        
-        extension = foto.filename.split(".")[-1]
-        from uuid import uuid4
-        nombre_archivo = f"{uuid4()}.{extension}"
-        ruta_foto = os.path.join(UPLOAD_DIR, nombre_archivo)
-
-        with open(ruta_foto, "wb") as buffer:
-            shutil.copyfileobj(foto.file, buffer)
-        
-        # Comprimir la imagen después de guardarla
-        comprimir_imagen(ruta_foto)
-
-        # Actualizar ruta foto en DB
-        db_usuario.foto = ruta_foto
+        try:
+            upload_result = cloudinary.uploader.upload(foto.file, folder="usuarios")
+            db_usuario.foto = upload_result.get("secure_url")
+        except Exception as e:
+            raise HTTPException(status_code=500, detail="Error al subir imagen")
 
     db.commit()
     db.refresh(db_usuario)
@@ -253,8 +228,20 @@ def obtener_usuarios_creados(
     usuarios = db.query(models.Usuario).filter(
         models.Usuario.company_id == current_user.company_id
     ).all()
-    
-    return usuarios
+
+    resultado = []
+    for usuario in usuarios:
+        usuario_dict = usuario.__dict__.copy()
+        # Remove SQLAlchemy internal state key if present
+        usuario_dict.pop("_sa_instance_state", None)
+        if usuario.area_id:
+            area = db.query(models.Area).filter(models.Area.id == usuario.area_id).first()
+            usuario_dict["area_nombre"] = area.nombre if area else None
+        else:
+            usuario_dict["area_nombre"] = None
+        resultado.append(usuario_dict)
+
+    return resultado
 
 @router.get("/{usuario_id}", response_model=schemas.UsuarioResponse)
 def obtener_usuario(
