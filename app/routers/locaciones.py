@@ -1,3 +1,5 @@
+import httpx
+import os
 from fastapi import APIRouter, HTTPException, Depends, Security
 from sqlalchemy.orm import Session
 from app.database import get_db
@@ -9,6 +11,45 @@ from uuid import UUID
 from typing import List
 
 router = APIRouter(prefix="/locaciones", tags=["Locaciones"])
+
+LOCATIONIQ_API_KEY = os.getenv("LOCATIONIQ_API_KEY")  # Debes tener esta variable en tu entorno
+
+async def obtener_coordenadas(direccion: str):
+    url = "https://us1.locationiq.com/v1/search.php"
+    params = {
+        "key": LOCATIONIQ_API_KEY,
+        "q": direccion,
+        "format": "json",
+    }
+    headers = {"User-Agent": "qr-app/1.0"}
+    async with httpx.AsyncClient() as client:
+        response = await client.get(url, params=params, headers=headers)
+        response.raise_for_status()
+        data = response.json()
+        if not data:
+            return []
+        return [
+            {
+                "display_name": item.get("display_name"),
+                "latitud": float(item.get("lat")),
+                "longitud": float(item.get("lon"))
+            }
+            for item in data
+        ]
+
+@router.get("/coordenadas/")
+async def buscar_coordenadas(direccion: str):
+    """
+    Devuelve un array de posibles coincidencias de dirección usando LocationIQ.
+    """
+    if not direccion:
+        raise HTTPException(status_code=400, detail="Debes proporcionar una dirección")
+    
+    resultados = await obtener_coordenadas(direccion)
+    if not resultados:
+        raise HTTPException(status_code=404, detail="No se encontraron resultados para la dirección")
+
+    return resultados
 
 # ✅ Crear locación asignando el usuario autenticado como creador
 @router.post("/", response_model=LocacionOut)
