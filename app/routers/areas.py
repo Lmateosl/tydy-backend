@@ -3,22 +3,36 @@ from sqlalchemy.orm import Session
 from uuid import UUID
 from app.database import get_db
 from app.schemas import AreaCreate, AreaOut, UsuarioResponse, AreaUpdate
-from app.models import Area
-from app.models import Locacion
+from app.models import Locacion, Empresa, Area, Usuario
 from ..auth.dependencies import get_current_user
-from ..models import Usuario
 
 router = APIRouter(prefix="/areas", tags=["Áreas"])
 
-# obtener todas las areas creadas por el usuario
-@router.get("/usuario/", response_model=list[AreaOut])
+# obtener todas las areas creadas en la compania
+@router.get("/", response_model=list[AreaOut])
 def obtener_areas_usuario(
     db: Session = Depends(get_db),
     current_user: Usuario = Security(get_current_user)
 ):
-    # Obtener las áreas creadas por el usuario
-    areas = db.query(Area).filter(Area.usuario_id == current_user.id).all()
+    # Obtener las áreas en la compania
+    areas = db.query(Area).filter(Area.company_id == current_user.company_id).all()
     return areas
+
+# Ruta para obtener resumen de totales
+@router.get("/resumen-totales")
+def resumen_totales(
+    db: Session = Depends(get_db),
+    current_user: Usuario = Security(get_current_user)
+):
+    total_areas = db.query(Area).filter(Area.company_id == current_user.company_id).count()
+    total_locaciones = db.query(Locacion).filter(Locacion.company_id == current_user.company_id).count()
+    total_empresas = db.query(Empresa).filter(Empresa.company_id == current_user.company_id).count()
+
+    return {
+        "total_areas": total_areas,
+        "total_locaciones": total_locaciones,
+        "total_empresas": total_empresas
+    }
 
 # Crear área
 @router.post("/", response_model=AreaOut, status_code=status.HTTP_201_CREATED)
