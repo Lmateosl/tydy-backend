@@ -89,6 +89,11 @@ def crear_lista(
         qr_data_out = {"lista_id": str(nueva_lista.id), "finalizada": True}
         nueva_lista.qrout = generar_qr_cloudinary(qr_data_out)
 
+    if lista.imagen:
+        nueva_lista.imagen = True
+    else:
+        nueva_lista.imagen = False
+
     db.commit()
     db.refresh(nueva_lista)
 
@@ -190,6 +195,11 @@ def actualizar_lista(
     if update_data.get("qrout") is True:
         qr_data_out = {"lista_id": str(lista.id), "finalizada": True}
         lista.qrout = generar_qr_cloudinary(qr_data_out)
+
+    if lista.imagen:
+        lista.imagen = True
+    else:
+        lista.imagen = False
 
     db.commit()
     db.refresh(lista)
