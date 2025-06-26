@@ -46,11 +46,11 @@ class Usuario(Base):
     supervisor_id = Column(UUID(as_uuid=True), ForeignKey("usuarios.id"), nullable=True)
     company_id = Column(UUID(as_uuid=True), ForeignKey("companies.id"), nullable=True)
 
-    empresas = relationship("Empresa", back_populates="creador", cascade="all, delete")
-    locaciones_creadas = relationship("Locacion", back_populates="creador", cascade="all, delete")
-    categorias = relationship("Categoria", back_populates="creador", cascade="all, delete")
-    actividades = relationship("Actividad", back_populates="creador", cascade="all, delete")
-    listas_actividades = relationship("ListaActividad", back_populates="creador", cascade="all, delete")
+    empresas = relationship("Empresa", back_populates="creador")
+    locaciones_creadas = relationship("Locacion", back_populates="creador")
+    categorias = relationship("Categoria", back_populates="creador")
+    actividades = relationship("Actividad", back_populates="creador")
+    listas_actividades = relationship("ListaActividad", back_populates="creador")
     supervisor = relationship("Usuario", remote_side=[id], backref="subordinados", foreign_keys=[supervisor_id])
     creador = relationship("Usuario", remote_side=[id], backref="usuarios_creados", foreign_keys=[creado_por])
     own_company = relationship("Company", back_populates="usuarios", foreign_keys=[company_id])
@@ -86,7 +86,7 @@ class Locacion(Base):
     own_company = relationship("Company", back_populates="locaciones", foreign_keys=[company_id])
     empresa = relationship("Empresa", back_populates="locaciones")
     creador = relationship("Usuario", back_populates="locaciones_creadas")
-    areas = relationship("Area", back_populates="locacion")
+    areas = relationship("Area", back_populates="locacion", cascade="all, delete")
 
 class Area(Base):
     __tablename__ = "areas"
@@ -165,6 +165,7 @@ class ListaActividad(Base):
         secondary=lista_actividad_actividades,
         back_populates="listas"
     )
+    historial = relationship("ActividadUsuario", back_populates="lista", cascade="all, delete")
 
 class ActividadUsuario(Base):
     __tablename__ = "historial_listas"
@@ -181,6 +182,6 @@ class ActividadUsuario(Base):
     imagen = Column(Text, nullable=True)
 
     usuario = relationship("Usuario")
-    lista = relationship("ListaActividad")
+    lista = relationship("ListaActividad", back_populates="historial")
     company = relationship("Company")
     

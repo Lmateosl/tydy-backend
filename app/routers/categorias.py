@@ -109,6 +109,13 @@ def eliminar_categoria(
     if current_user.rol not in ["admin", "supervisor"]:
         raise HTTPException(status_code=403, detail="No tienes permisos")
 
+    # Verificar si la categoría tiene actividades asociadas
+    actividades = db.query(models.Actividad).filter(
+        models.Actividad.categoria_id == categoria_id
+    ).first()
+    if actividades:
+        raise HTTPException(status_code=400, detail="No se puede eliminar una categoría que tiene actividades asociadas")
+
     db.delete(categoria)
     db.commit()
     return {"detalle": "Categoría eliminada correctamente"}

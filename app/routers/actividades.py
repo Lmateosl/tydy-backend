@@ -113,6 +113,11 @@ def eliminar_actividad(
     ).first()
     if not actividad:
         raise HTTPException(status_code=404, detail="Actividad no encontrada")
+    
+    # Validar que no esté asociada a ninguna lista
+    if actividad.listas:
+        raise HTTPException(status_code=400, detail="No se puede eliminar la actividad porque está asociada a una lista")
+
 
     if current_user.rol not in ["admin", "supervisor"]:
         raise HTTPException(status_code=403, detail="No tienes permisos para eliminar actividades")
