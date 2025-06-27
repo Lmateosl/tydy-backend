@@ -11,7 +11,8 @@ router = APIRouter(prefix="/auth", tags=["Auth"])
 
 @router.post("/login", response_model=schemas.Token)
 def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
-    usuario = db.query(Usuario).filter(Usuario.email == form_data.username).first()
+    email = form_data.username.lower()
+    usuario = db.query(Usuario).filter(Usuario.email == email).first()
     if not usuario or not verify_password(form_data.password, usuario.contrasena):
         raise HTTPException(status_code=401, detail="Credenciales incorrectas")
 

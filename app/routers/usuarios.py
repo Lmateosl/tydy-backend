@@ -124,7 +124,7 @@ def crear_usuario(
 
     nuevo_usuario = Usuario(
         nombre=nombre,
-        email=email,
+        email=email.lower(),
         contrasena=hashed_password,
         rol=rol,
         numero=numero,
@@ -179,7 +179,7 @@ def editar_usuario(
     if nombre is not None:
         db_usuario.nombre = nombre
     if email is not None:
-        db_usuario.email = email
+        db_usuario.email = email.lower()
     if contrasena is not None:
         db_usuario.contrasena = hash_password(contrasena)
     if rol is not None:

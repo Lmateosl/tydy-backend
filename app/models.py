@@ -19,6 +19,7 @@ class Company(Base):
     direccion = Column(Text)
     telefono = Column(Text)
     creado_en = Column(DateTime, default=datetime.utcnow)
+    email = Column(Text, unique=True)
 
     usuarios = relationship("Usuario", back_populates="own_company")
     empresas = relationship("Empresa", back_populates="own_company")

@@ -6,7 +6,7 @@ from uuid import UUID
 from datetime import datetime
 from fastapi.responses import StreamingResponse
 from app.database import get_db
-from app.models import ActividadUsuario, Usuario, ListaActividad, Area, Empresa, Locacion
+from app.models import ActividadUsuario, Usuario, ListaActividad, Area, Empresa, Locacion, Company
 from app.schemas import ActividadUsuarioCreate, ActividadUsuarioResponse, ActividadUsuarioUpdate, ActividadUsuarioResponseExtendido, ActividadFinalizar
 from app.auth.dependencies import get_current_user
 import io
@@ -212,9 +212,12 @@ def finalizar_actividad(
     db.refresh(actividad)
 
     if actividad.comentario:
+        company = db.query(Company).filter(Company.id == current_user.company_id).first()
+        if not company:
+            raise HTTPException(status_code=404, detail="No perteneces a ninguna empresa")
         message = MessageSchema(
             subject="Alerta al finalizar actividad",
-            recipients=["mateosan67@gmail.com"],
+            recipients=[company.email],
             body=f"El usuario {current_user.nombre} con número de identificación: {current_user.identificacion} finalizó una actividad y dejó un comentario:\n\n{actividad.comentario}.\n\n Entra en la plataforma para mis información",
             subtype=MessageType.plain
         )
