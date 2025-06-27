@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Security, Path, UploadFil
 from sqlalchemy.orm import Session
 from .. import schemas, models
 from ..database import get_db
-from ..utils import hash_password
+from ..utils import hash_password, verify_password
 from app.models import Usuario
 from app.auth.dependencies import get_current_user
 from uuid import UUID
@@ -12,8 +12,6 @@ from app.models import Empresa
 from app.models import Actividad
 from app.models import ListaActividad
 from PIL import Image
-import os, shutil
-import uuid
 import cloudinary.uploader
 from dotenv import load_dotenv
 load_dotenv()
@@ -296,8 +294,9 @@ def cambiar_contrasena(
 
     if not db_usuario:
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
+    
 
-    if not db_usuario.contrasena or not hash_password(contrasena_actual) == db_usuario.contrasena:
+    if not db_usuario.contrasena or not verify_password(contrasena_actual, db_usuario.contrasena):
         raise HTTPException(status_code=400, detail="La contraseña actual es incorrecta")
 
     db_usuario.contrasena = hash_password(nueva_contrasena)
