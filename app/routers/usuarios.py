@@ -20,6 +20,21 @@ load_dotenv()
 
 router = APIRouter(prefix="/usuarios", tags=["Usuarios"])
 
+# Ruta para obtener la companía del usuario actual
+@router.get("/mi-compania", response_model=schemas.ComapnyResponse)
+def obtener_compania_actual(
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_user),
+):
+    if not current_user.company_id:
+        raise HTTPException(status_code=404, detail="Usuario no pertenece a ninguna compañía")
+
+    company = db.query(models.Company).filter(models.Company.id == current_user.company_id).first()
+    if not company:
+        raise HTTPException(status_code=404, detail="Compañía no encontrada")
+
+    return company
+
 @router.get("/perfil", response_model=schemas.me)
 def obtener_perfil(db: Session = Depends(get_db), current_user: Usuario = Depends(get_current_user)):
     usuario = db.query(models.Usuario).filter(models.Usuario.id == current_user.id).first()
@@ -260,3 +275,71 @@ def obtener_usuario(
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
 
     return db_usuario
+
+
+# Ruta para cambiar la contraseña de un usuario (solo puede cambiar su propia contraseña)
+@router.put("/{usuario_id}/cambiar-contrasena")
+def cambiar_contrasena(
+    usuario_id: UUID = Path(..., description="ID del usuario a cambiar la contraseña"),
+    contrasena_actual: str = Form(...),
+    nueva_contrasena: str = Form(...),
+    db: Session = Depends(get_db),
+    current_user: Usuario = Security(get_current_user),
+):
+    if current_user.id != usuario_id:
+        raise HTTPException(status_code=403, detail="No tienes permisos para cambiar esta contraseña")
+
+    db_usuario = db.query(models.Usuario).filter(
+        models.Usuario.id == usuario_id,
+        models.Usuario.company_id == current_user.company_id
+    ).first()
+
+    if not db_usuario:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+
+    if not db_usuario.contrasena or not hash_password(contrasena_actual) == db_usuario.contrasena:
+        raise HTTPException(status_code=400, detail="La contraseña actual es incorrecta")
+
+    db_usuario.contrasena = hash_password(nueva_contrasena)
+    db.commit()
+    return {"detail": "Contraseña actualizada correctamente"}
+
+
+# Ruta para obtener la estructura (empresa, locación y área) de un usuario
+@router.get("/{usuario_id}/estructura", response_model=schemas.AreaMini)
+def obtener_estructura_usuario(
+    usuario_id: UUID = Path(..., description="ID del usuario"),
+    db: Session = Depends(get_db),
+    current_user: Usuario = Security(get_current_user),
+):
+    usuario = db.query(models.Usuario).filter(
+        models.Usuario.id == usuario_id,
+        models.Usuario.company_id == current_user.company_id
+    ).first()
+
+    if not usuario:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+
+    if not usuario.area:
+        raise HTTPException(status_code=400, detail="El usuario no tiene un área asignada")
+
+    area = usuario.area
+    locacion = area.locacion
+    empresa = locacion.empresa
+
+    return schemas.AreaMini(
+        id=area.id,
+        nombre=area.nombre,
+        locacion=schemas.LocacionMini(
+            id=locacion.id,
+            nombre=locacion.nombre,
+            direccion=locacion.direccion,
+            latitud=float(locacion.latitud) if locacion.latitud else None,
+            longitud=float(locacion.longitud) if locacion.longitud else None,
+            empresa=schemas.EmpresaMini(
+                id=empresa.id,
+                nombre=empresa.nombre,
+                imagen=empresa.imagen
+            )
+        )
+    )

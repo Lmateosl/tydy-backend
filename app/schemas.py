@@ -67,6 +67,18 @@ class UsuarioLogin(BaseModel):
     email: str
     contrasena: str
 
+class CompanyBase(BaseModel):
+    nombre: str
+    ruc: Optional[str] = None
+    direccion: Optional[str] = None
+    telefono: Optional[str] = None
+
+class ComapnyResponse(CompanyBase):
+    pass
+
+    class Config:
+        from_attributes = True
+
 # Token
 # Este modelo representa la estructura del token de acceso
 class Token(BaseModel):
@@ -311,6 +323,37 @@ class ActividadUsuarioResponseExtendido(BaseModel):
 class ActividadFinalizar(BaseModel):
     comentario: Optional[str]
     imagen: Optional[str]
+
+    class Config:
+        from_attributes = True
+
+
+# Otros esquemas usuario
+class EmpresaMini(BaseModel):
+    id: UUID
+    nombre: str
+    imagen: Optional[str]
+
+    class Config:
+        from_attributes = True
+
+
+class LocacionMini(BaseModel):
+    id: UUID
+    nombre: str
+    direccion: Optional[str]
+    latitud: Optional[float]
+    longitud: Optional[float]
+    empresa: EmpresaMini
+
+    class Config:
+        from_attributes = True
+
+
+class AreaMini(BaseModel):
+    id: UUID
+    nombre: str
+    locacion: LocacionMini
 
     class Config:
         from_attributes = True
