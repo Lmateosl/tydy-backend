@@ -72,6 +72,7 @@ class CompanyBase(BaseModel):
     ruc: Optional[str] = None
     direccion: Optional[str] = None
     telefono: Optional[str] = None
+    logo: Optional[str] = None
 
 class ComapnyResponse(CompanyBase):
     pass
