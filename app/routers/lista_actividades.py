@@ -298,19 +298,31 @@ async def crear_feedback_user(
     comentario: str | None = Form(None),
     foto: UploadFile | None = File(None),
     db: Session = Depends(get_db),
-    current_user: Usuario = Security(get_current_user),
 ):
     """
-    Crea un registro de feedback de un usuario.
+    Crea un registro de feedback de un usuario SIN requerir autenticación.
     La foto es opcional; si se envía, se sube a Cloudinary y se guarda la URL.
     Los datos se reciben como form-data (para soportar archivo de imagen).
+
+    Para asociar el feedback a una empresa, se intenta buscar un registro
+    de FeedbackQR que coincida con empresa (nombre) y direccion, y se usa
+    su company_id/usuario_id si existe.
     """
     foto_url = None
     if foto is not None:
-        # Subir imagen a Cloudinary en carpeta dedicada
+        # Subir imagen a Cloudinary en carpeta dedicada, comprimida
         imagen_comprimida = comprimir_imagen(foto.file, quality=70)
         result = cloudinary.uploader.upload(imagen_comprimida, folder="feedback_fotos")
         foto_url = result.get("secure_url")
+
+    # Intentar asociar a una empresa usando FeedbackQR (nombre/direccion)
+    feedback_qr = db.query(models.FeedbackQR).filter(
+        models.FeedbackQR.nombre == empresa,
+        models.FeedbackQR.direccion == direccion,
+    ).first()
+
+    company_id = feedback_qr.company_id if feedback_qr else None
+    usuario_id = feedback_qr.usuario_id if feedback_qr else None
 
     nuevo_feedback = models.Feedback(
         nombre=nombre,
@@ -319,8 +331,8 @@ async def crear_feedback_user(
         calificacion=calificacion,
         comentario=comentario,
         foto=foto_url,
-        company_id=current_user.company_id,
-        usuario_id=current_user.id,
+        company_id=company_id,
+        usuario_id=usuario_id,
     )
 
     db.add(nuevo_feedback)
