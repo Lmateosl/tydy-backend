@@ -245,12 +245,13 @@ def actualizar_feedback_qr(
     nuevo_nombre = payload.nombre if payload.nombre is not None else feedback.nombre
     nueva_direccion = payload.direccion if payload.direccion is not None else feedback.direccion
 
-    # Reconstruir la URL con los nuevos valores
+    # Reconstruir la URL con los nuevos valores (incluyendo company_id)
     from urllib.parse import quote
     base_url = "https://tydy.pro/feedback/"
     nombre_encoded = quote(nuevo_nombre or "", safe="")
     direccion_encoded = quote(nueva_direccion or "", safe="")
-    full_url = f"{base_url}{nombre_encoded}/{direccion_encoded}"
+    company_id_encoded = quote(str(feedback.company_id) or "", safe="")
+    full_url = f"{base_url}{nombre_encoded}/{direccion_encoded}/{company_id_encoded}"
 
     # Regenerar QR en Cloudinary
     qr_url = generar_qr_cloudinary_feedback(full_url)
