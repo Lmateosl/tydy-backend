@@ -323,7 +323,6 @@ async def crear_feedback_user(
         models.FeedbackQR.direccion == direccion,
     ).first()
 
-    company_id = feedback_qr.company_id if feedback_qr else None
     usuario_id = feedback_qr.usuario_id if feedback_qr else None
 
     nuevo_feedback = models.Feedback(
