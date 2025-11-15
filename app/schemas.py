@@ -296,6 +296,10 @@ class FeedbackQRCreate(BaseModel):
     nombre: str
     direccion: Optional[str] = None
 
+class FeedbackQRUpdate(BaseModel):
+    nombre: Optional[str] = None
+    direccion: Optional[str] = None
+
 class FeedbackQRResponse(BaseModel):
     """
     Respuesta mínima al crear/consultar un FeedbackQR.
