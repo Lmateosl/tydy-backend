@@ -402,6 +402,7 @@ class FeedbackCreate(BaseModel):
     empresa: str = None
     direccion: str
     calificacion: float
+    company_id: UUID
     comentario: Optional[str] = None
     foto: Optional[str] = None
 
