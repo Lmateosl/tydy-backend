@@ -183,7 +183,7 @@ def crear_feedback_list(
     base_url = "https://tydy.pro/feedback/"
     nombre_encoded = quote(payload.nombre or "", safe="")
     direccion_encoded = quote(payload.direccion or "", safe="")
-    company_id_encoded = quote(current_user.company_id or "", safe="")
+    company_id_encoded = quote(str(current_user.company_id) if current_user.company_id else "", safe="")
     full_url = f"{base_url}{nombre_encoded}/{direccion_encoded}/{company_id_encoded}"
 
     # 2) Generar QR y subirlo a Cloudinary (carpeta dedicada)
