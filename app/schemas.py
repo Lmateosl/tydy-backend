@@ -275,10 +275,36 @@ class LocacionMini(BaseModel):
     class Config:
         from_attributes = True
 
+
 class AreaMini(BaseModel):
     id: UUID
     nombre: str
     locacion: LocacionMini
+
+    class Config:
+        from_attributes = True
+
+# -------------------------
+# Feedback QR Schemas
+# -------------------------
+class FeedbackQRCreate(BaseModel):
+    """
+    Payload que envía el cliente antes de generar el QR.
+    Estos datos (nombre y direccion) se codificarán dentro del QR,
+    NO se guardan en la tabla feedback_qr.
+    """
+    nombre: str
+    direccion: Optional[str] = None
+
+class FeedbackQRResponse(BaseModel):
+    """
+    Respuesta mínima al crear/consultar un FeedbackQR.
+    Solo devolvemos el id del registro y la URL del QR generado.
+    """
+    id: UUID
+    url: str
+    nombre: str
+    direccion: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -358,3 +384,50 @@ class AreaMini(BaseModel):
 
     class Config:
         from_attributes = True
+
+# -------------------------
+# Feedback Schemas
+# -------------------------
+class FeedbackCreate(BaseModel):
+    """
+    Payload para crear un registro de feedback.
+    nombre, empresa, comentario y foto son opcionales.
+    direccion y calificacion son obligatorios.
+    """
+    nombre: Optional[str] = None
+    empresa: str = None
+    direccion: str
+    calificacion: float
+    comentario: Optional[str] = None
+    foto: Optional[str] = None
+
+
+class FeedbackUpdate(BaseModel):
+    """
+    Payload para actualizar un registro de feedback existente.
+    Todos los campos son opcionales.
+    """
+    nombre: Optional[str] = None
+    empresa: Optional[str] = None
+    direccion: Optional[str] = None
+    calificacion: Optional[float] = None
+    comentario: Optional[str] = None
+    foto: Optional[str] = None
+
+
+class FeedbackResponse(BaseModel):
+    """
+    Respuesta al consultar/crear/actualizar un feedback.
+    """
+    id: UUID
+    nombre: Optional[str] = None
+    empresa: str = None
+    direccion: str
+    calificacion: float
+    comentario: Optional[str] = None
+    foto: Optional[str] = None
+    creado_en: datetime
+
+    class Config:
+        from_attributes = True
+

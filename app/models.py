@@ -29,6 +29,8 @@ class Company(Base):
     categorias = relationship("Categoria", back_populates="own_company")
     actividades = relationship("Actividad", back_populates="own_company")
     listas_actividades = relationship("ListaActividad", back_populates="own_company")
+    feedbacks_qr = relationship("FeedbackQR", back_populates="own_company")
+    feedbacks = relationship("Feedback", back_populates="own_company")
 
 class Usuario(Base):
     __tablename__ = "usuarios"
@@ -53,6 +55,8 @@ class Usuario(Base):
     categorias = relationship("Categoria", back_populates="creador")
     actividades = relationship("Actividad", back_populates="creador")
     listas_actividades = relationship("ListaActividad", back_populates="creador")
+    feedbacks_qr = relationship("FeedbackQR", back_populates="usuario")
+    feedbacks = relationship("Feedback", back_populates="usuario")
     supervisor = relationship("Usuario", remote_side=[id], backref="subordinados", foreign_keys=[supervisor_id])
     creador = relationship("Usuario", remote_side=[id], backref="usuarios_creados", foreign_keys=[creado_por])
     own_company = relationship("Company", back_populates="usuarios", foreign_keys=[company_id])
@@ -186,4 +190,37 @@ class ActividadUsuario(Base):
     usuario = relationship("Usuario")
     lista = relationship("ListaActividad", back_populates="historial")
     company = relationship("Company")
-    
+
+# FeedbackQR model
+class FeedbackQR(Base):
+    __tablename__ = "feedback_qr"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    url = Column(Text, nullable=False)
+    nombre = Column(Text, nullable=False)
+    direccion = Column(Text, nullable=False)
+    creado_en = Column(DateTime, default=datetime.utcnow)
+    company_id = Column(UUID(as_uuid=True), ForeignKey("companies.id"), nullable=True)
+    usuario_id = Column(UUID(as_uuid=True), ForeignKey("usuarios.id"), nullable=True)
+
+    # Relaciones
+    own_company = relationship("Company", back_populates="feedbacks_qr", foreign_keys=[company_id])
+    usuario = relationship("Usuario", back_populates="feedbacks_qr", foreign_keys=[usuario_id])
+
+class Feedback(Base):
+    __tablename__ = "feedback"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    nombre = Column(Text, nullable=True)
+    empresa = Column(Text, nullable=False)
+    direccion = Column(Text, nullable=False)
+    calificacion = Column(Numeric(2, 1), nullable=False)
+    comentario = Column(Text, nullable=True)
+    foto = Column(Text, nullable=True)
+    creado_en = Column(DateTime, default=datetime.utcnow)
+
+    company_id = Column(UUID(as_uuid=True), ForeignKey("companies.id"), nullable=True)
+    usuario_id = Column(UUID(as_uuid=True), ForeignKey("usuarios.id"), nullable=True)
+
+    own_company = relationship("Company", back_populates="feedbacks", foreign_keys=[company_id])
+    usuario = relationship("Usuario", back_populates="feedbacks", foreign_keys=[usuario_id])
