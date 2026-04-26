@@ -9,6 +9,7 @@ from app.database import get_db
 from app.models import ActividadUsuario, Usuario, ListaActividad, Area, Empresa, Locacion, Company
 from app.schemas import ActividadUsuarioCreate, ActividadUsuarioResponse, ActividadUsuarioUpdate, ActividadUsuarioResponseExtendido, ActividadFinalizar
 from app.auth.dependencies import get_current_user
+from app.services.incidentes_automaticos import crear_incidentes_automaticos_por_finalizacion
 import io
 from typing import List, Optional
 from sqlalchemy.orm import joinedload
@@ -307,6 +308,11 @@ def finalizar_actividad(
         actividad.imagen = ruta_imagen
     db.commit()
     db.refresh(actividad)
+    crear_incidentes_automaticos_por_finalizacion(
+        db,
+        actividad,
+        company_id_fallback=current_user.company_id,
+    )
 
     if actividad.comentario:
         company = db.query(Company).filter(Company.id == current_user.company_id).first()

@@ -5,7 +5,9 @@ from uuid import UUID
 from ..database import get_db
 from .. import models, schemas
 from ..auth.dependencies import get_current_user
+from ..image_utils import compress_image
 from ..models import Usuario
+from ..services.incidentes_automaticos import crear_incidente_automatico_por_feedback_negativo
 import qrcode
 import base64
 from io import BytesIO
@@ -14,7 +16,6 @@ import string
 import os
 import cloudinary.uploader
 from urllib.parse import urlencode
-from PIL import Image
 
 # Función auxiliar para generar código de 6 dígitos
 def generar_codigo():
@@ -40,19 +41,6 @@ def generar_qr_cloudinary_feedback(data: str) -> str:
     return result["secure_url"]
 
 PUBLIC_FRONTEND_FEEDBACK_URL = os.getenv("VITE_PUBLIC_FRONTEND_FEEDBACK_URL", "https://tydy.pro/feedback")
-
-def comprimir_imagen(file, quality: int = 70):
-    """
-    Comprime una imagen antes de subirla a Cloudinary.
-    quality: 1-95 (70 recomendado)
-    Retorna un buffer listo para subir.
-    """
-    img = Image.open(file)
-    img = img.convert("RGB")
-    buffer = BytesIO()
-    img.save(buffer, format="JPEG", optimize=True, quality=quality)
-    buffer.seek(0)
-    return buffer
 
 router = APIRouter(prefix="/listas_actividades", tags=["Listas de Actividades"])
 
@@ -352,7 +340,7 @@ async def crear_feedback_user(
     """
     foto_url = None
     if foto is not None:
-        imagen_comprimida = comprimir_imagen(foto.file, quality=70)
+        imagen_comprimida = compress_image(foto.file, quality=70)
         result = cloudinary.uploader.upload(imagen_comprimida, folder="feedback_fotos")
         foto_url = result.get("secure_url")
 
@@ -414,6 +402,7 @@ async def crear_feedback_user(
     db.add(nuevo_feedback)
     db.commit()
     db.refresh(nuevo_feedback)
+    crear_incidente_automatico_por_feedback_negativo(db, nuevo_feedback)
 
     return nuevo_feedback
 
@@ -490,7 +479,7 @@ async def actualizar_feedback_user(
 
     # Procesar nueva foto si se envía
     if foto is not None:
-        imagen_comprimida = comprimir_imagen(foto.file, quality=70)
+        imagen_comprimida = compress_image(foto.file, quality=70)
         result = cloudinary.uploader.upload(imagen_comprimida, folder="feedback_fotos")
         feedback.foto = result.get("secure_url")
 

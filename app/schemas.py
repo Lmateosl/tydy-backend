@@ -484,6 +484,74 @@ class FeedbackResponse(BaseModel):
         from_attributes = True
 
 
+class IncidenteCreate(BaseModel):
+    tipo: Literal["feedback_negativo", "actividad_no_finalizada", "comentario_empleado", "evidencia_faltante", "manual"]
+    prioridad: Literal["baja", "media", "alta", "critica"] = "media"
+    descripcion: str
+    empresa_id: Optional[UUID] = None
+    locacion_id: Optional[UUID] = None
+    area_id: Optional[UUID] = None
+    empleado_id: Optional[UUID] = None
+    supervisor_id: Optional[UUID] = None
+    asignado_a_id: Optional[UUID] = None
+    actividad_usuario_id: Optional[UUID] = None
+    feedback_id: Optional[UUID] = None
+    evidencia_inicial: Optional[str] = None
+
+
+class IncidenteUpdate(BaseModel):
+    tipo: Optional[Literal["feedback_negativo", "actividad_no_finalizada", "comentario_empleado", "evidencia_faltante", "manual"]] = None
+    prioridad: Optional[Literal["baja", "media", "alta", "critica"]] = None
+    descripcion: Optional[str] = None
+    estado: Optional[Literal["abierto", "asignado", "en_proceso", "resuelto", "cerrado"]] = None
+    empresa_id: Optional[UUID] = None
+    locacion_id: Optional[UUID] = None
+    area_id: Optional[UUID] = None
+    empleado_id: Optional[UUID] = None
+    supervisor_id: Optional[UUID] = None
+    asignado_a_id: Optional[UUID] = None
+    actividad_usuario_id: Optional[UUID] = None
+    feedback_id: Optional[UUID] = None
+    evidencia_inicial: Optional[str] = None
+    evidencia_resolucion: Optional[str] = None
+
+
+class IncidenteResolver(BaseModel):
+    evidencia_resolucion: Optional[str] = None
+
+
+class IncidenteCerrar(BaseModel):
+    pass
+
+
+class IncidenteResponse(BaseModel):
+    id: UUID
+    tipo: str
+    prioridad: str
+    descripcion: str
+    estado: str
+    company_id: UUID
+    empresa_id: Optional[UUID] = None
+    locacion_id: Optional[UUID] = None
+    area_id: Optional[UUID] = None
+    empleado_id: Optional[UUID] = None
+    supervisor_id: Optional[UUID] = None
+    asignado_a_id: Optional[UUID] = None
+    actividad_usuario_id: Optional[UUID] = None
+    feedback_id: Optional[UUID] = None
+    evidencia_inicial: Optional[str] = None
+    evidencia_resolucion: Optional[str] = None
+    foto_resolucion: Optional[str] = None
+    creado_en: datetime
+    actualizado_en: datetime
+    resuelto_en: Optional[datetime] = None
+    cerrado_en: Optional[datetime] = None
+    creado_por: UUID
+
+    class Config:
+        from_attributes = True
+
+
 class DashboardRiesgoLocacionItem(BaseModel):
     locacion_id: Optional[UUID] = None
     locacion_nombre: str
@@ -524,11 +592,60 @@ class DashboardRiesgoFeedbackNegativoItem(BaseModel):
     creado_en: datetime
 
 
+class DashboardIncidenteRecienteItem(BaseModel):
+    id: UUID
+    estado: str
+    tipo: str
+    prioridad: str
+    locacion_id: Optional[UUID] = None
+    locacion_nombre: Optional[str] = None
+    area_id: Optional[UUID] = None
+    area_nombre: Optional[str] = None
+    empresa_id: Optional[UUID] = None
+    empresa_nombre: Optional[str] = None
+    creado_en: datetime
+    resuelto_en: Optional[datetime] = None
+
+
+class DashboardLocacionIncidenteItem(BaseModel):
+    locacion_id: Optional[UUID] = None
+    locacion_nombre: Optional[str] = None
+    empresa_nombre: Optional[str] = None
+    total_incidentes: int
+    incidentes_abiertos: int
+
+
+class PortalClienteSeguimientoRecienteItem(BaseModel):
+    id: UUID
+    estado: str
+    tipo_publico: str
+    locacion_nombre: Optional[str] = None
+    area_nombre: Optional[str] = None
+    creado_en: datetime
+    resuelto_en: Optional[datetime] = None
+    evidencia_resolucion: Optional[str] = None
+    foto_resolucion: Optional[str] = None
+    tiempo_respuesta_horas: Optional[float] = None
+
+
+class PortalClienteAreaSeguimientoItem(BaseModel):
+    locacion_id: Optional[UUID] = None
+    locacion_nombre: Optional[str] = None
+    area_id: Optional[UUID] = None
+    area_nombre: Optional[str] = None
+    total_seguimientos: int
+    seguimientos_abiertos: int
+
+
 class DashboardRiesgosResponse(BaseModel):
     locaciones_con_problemas: List[DashboardRiesgoLocacionItem] = []
     empleados_con_pendientes: List[DashboardRiesgoEmpleadoPendienteItem] = []
     comentarios_recientes: List[DashboardRiesgoComentarioRecienteItem] = []
     feedback_negativo_reciente: List[DashboardRiesgoFeedbackNegativoItem] = []
+    incidentes_recientes: List[DashboardIncidenteRecienteItem] = []
+    locaciones_con_mas_incidentes: List[DashboardLocacionIncidenteItem] = []
+    seguimientos_recientes: List[PortalClienteSeguimientoRecienteItem] = []
+    areas_con_seguimiento: List[PortalClienteAreaSeguimientoItem] = []
 
 
 class PortalClienteResumenResponse(BaseModel):
@@ -541,3 +658,6 @@ class PortalClienteResumenResponse(BaseModel):
     evidencias_faltantes: int = 0
     feedbacks_negativos: int = 0
     incidentes_abiertos: int = 0
+    seguimientos_abiertos: int = 0
+    seguimientos_resueltos: int = 0
+    tiempo_promedio_respuesta_horas: float = 0.0

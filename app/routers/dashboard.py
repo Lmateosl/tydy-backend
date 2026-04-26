@@ -10,6 +10,16 @@ from .. import models, schemas
 from ..auth.dependencies import get_current_user
 from ..database import get_db
 from ..models import Usuario
+from ..services.incidentes_metrics import (
+    ESTADOS_ABIERTOS,
+    ESTADOS_RESUELTOS,
+    aplicar_filtro_fecha_incidentes,
+    build_company_incidentes_query,
+    promedio_resolucion_horas,
+    query_incidentes_con_contexto,
+    serialize_incidente_dashboard,
+    top_locaciones_con_incidentes,
+)
 
 
 router = APIRouter(prefix="/dashboard/operativo", tags=["Dashboard"])
@@ -112,13 +122,17 @@ def obtener_resumen_operativo(
         models.Feedback.calificacion < 3,
     ).scalar() or 0
 
-    incidentes_historial = db.query(func.count(models.ActividadUsuario.id)).filter(
-        models.ActividadUsuario.company_id == company_id,
-        models.ActividadUsuario.comentario.isnot(None),
-        func.length(func.trim(models.ActividadUsuario.comentario)) > 0,
-    ).scalar() or 0
-
-    incidentes_abiertos = incidentes_historial + feedbacks_negativos
+    incidentes_query = build_company_incidentes_query(db, company_id)
+    incidentes_abiertos = incidentes_query.filter(
+        models.Incidente.estado.in_(ESTADOS_ABIERTOS)
+    ).count()
+    incidentes_resueltos = incidentes_query.filter(
+        models.Incidente.estado.in_(ESTADOS_RESUELTOS)
+    ).count()
+    incidentes_criticos = incidentes_query.filter(
+        models.Incidente.prioridad == "critica"
+    ).count()
+    tiempo_promedio_resolucion = promedio_resolucion_horas(incidentes_query)
 
     return {
         "actividades_hoy": actividades_hoy,
@@ -130,6 +144,9 @@ def obtener_resumen_operativo(
         "evidencias_faltantes": evidencias_faltantes,
         "feedbacks_negativos": feedbacks_negativos,
         "incidentes_abiertos": incidentes_abiertos,
+        "incidentes_resueltos": incidentes_resueltos,
+        "incidentes_criticos": incidentes_criticos,
+        "tiempo_promedio_resolucion_horas": tiempo_promedio_resolucion,
     }
 
 
@@ -321,9 +338,34 @@ def obtener_riesgos_operativos(
         for feedback in feedback_query.order_by(models.Feedback.creado_en.desc()).limit(10).all()
     ]
 
+    incidentes_query = aplicar_filtro_fecha_incidentes(
+        build_company_incidentes_query(db, company_id),
+        desde,
+        hasta,
+    )
+    incidentes_recientes = [
+        serialize_incidente_dashboard(incidente, locacion_nombre, area_nombre, empresa_nombre)
+        for incidente, locacion_nombre, area_nombre, empresa_nombre in query_incidentes_con_contexto(
+            incidentes_query
+        ).order_by(models.Incidente.creado_en.desc()).limit(5).all()
+    ]
+
+    locaciones_con_mas_incidentes = [
+        {
+            "locacion_id": fila.locacion_id,
+            "locacion_nombre": fila.locacion_nombre,
+            "empresa_nombre": fila.empresa_nombre,
+            "total_incidentes": int(fila.total_incidentes or 0),
+            "incidentes_abiertos": int(fila.incidentes_abiertos or 0),
+        }
+        for fila in top_locaciones_con_incidentes(incidentes_query, limit=5)
+    ]
+
     return {
         "locaciones_con_problemas": locaciones_con_problemas,
         "empleados_con_pendientes": empleados_con_pendientes,
         "comentarios_recientes": comentarios_recientes,
         "feedback_negativo_reciente": feedback_negativo_reciente,
+        "incidentes_recientes": incidentes_recientes,
+        "locaciones_con_mas_incidentes": locaciones_con_mas_incidentes,
     }

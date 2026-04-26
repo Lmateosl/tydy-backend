@@ -9,6 +9,16 @@ from .. import models, schemas
 from ..auth.dependencies import get_current_user
 from ..database import get_db
 from ..models import Usuario, ListaActividad, Area, Locacion, Empresa
+from ..services.incidentes_metrics import (
+    ESTADOS_ABIERTOS,
+    ESTADOS_RESUELTOS,
+    aplicar_filtro_fecha_incidentes,
+    build_cliente_incidentes_query,
+    promedio_resolucion_horas,
+    query_incidentes_con_contexto,
+    serialize_incidente_cliente,
+    top_areas_con_seguimiento,
+)
 
 
 router = APIRouter(prefix="/portal-cliente", tags=["Portal Cliente"])
@@ -206,12 +216,19 @@ def obtener_resumen_portal_cliente(
             or 0
         )
 
-    incidentes_historial = (
-        actividades_base.filter(
-            models.ActividadUsuario.comentario.isnot(None),
-            func.length(func.trim(models.ActividadUsuario.comentario)) > 0,
-        ).count()
+    incidentes_query = build_cliente_incidentes_query(db, current_user.company_id, empresa_ids)
+    incidentes_filtrados = aplicar_filtro_fecha_incidentes(
+        incidentes_query,
+        desde,
+        hasta,
     )
+    seguimientos_abiertos = incidentes_filtrados.filter(
+        models.Incidente.estado.in_(ESTADOS_ABIERTOS)
+    ).count()
+    seguimientos_resueltos = incidentes_filtrados.filter(
+        models.Incidente.estado.in_(ESTADOS_RESUELTOS)
+    ).count()
+    tiempo_promedio_respuesta_horas = promedio_resolucion_horas(incidentes_filtrados)
 
     return {
         "actividades_hoy": actividades_hoy,
@@ -222,7 +239,10 @@ def obtener_resumen_portal_cliente(
         "locaciones_con_actividad_hoy": locaciones_con_actividad_hoy,
         "evidencias_faltantes": evidencias_faltantes,
         "feedbacks_negativos": feedbacks_negativos,
-        "incidentes_abiertos": incidentes_historial + feedbacks_negativos,
+        "incidentes_abiertos": seguimientos_abiertos,
+        "seguimientos_abiertos": seguimientos_abiertos,
+        "seguimientos_resueltos": seguimientos_resueltos,
+        "tiempo_promedio_respuesta_horas": tiempo_promedio_respuesta_horas,
     }
 
 
@@ -409,11 +429,37 @@ def obtener_riesgos_portal_cliente(
             for feedback in feedback_query.order_by(models.Feedback.creado_en.desc()).limit(10).all()
         ]
 
+    incidentes_query = aplicar_filtro_fecha_incidentes(
+        build_cliente_incidentes_query(db, company_id, empresa_ids),
+        desde,
+        hasta,
+    )
+    seguimientos_recientes = [
+        serialize_incidente_cliente(incidente, locacion_nombre, area_nombre)
+        for incidente, locacion_nombre, area_nombre, _ in query_incidentes_con_contexto(
+            incidentes_query
+        ).order_by(models.Incidente.creado_en.desc()).limit(5).all()
+    ]
+
+    areas_con_seguimiento = [
+        {
+            "locacion_id": fila.locacion_id,
+            "locacion_nombre": fila.locacion_nombre,
+            "area_id": fila.area_id,
+            "area_nombre": fila.area_nombre,
+            "total_seguimientos": int(fila.total_seguimientos or 0),
+            "seguimientos_abiertos": int(fila.seguimientos_abiertos or 0),
+        }
+        for fila in top_areas_con_seguimiento(incidentes_query, limit=5)
+    ]
+
     return {
         "locaciones_con_problemas": locaciones_con_problemas,
         "empleados_con_pendientes": empleados_con_pendientes,
         "comentarios_recientes": comentarios_recientes,
         "feedback_negativo_reciente": feedback_negativo_reciente,
+        "seguimientos_recientes": seguimientos_recientes,
+        "areas_con_seguimiento": areas_con_seguimiento,
     }
 
 
