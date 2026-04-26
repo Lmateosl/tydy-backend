@@ -11,6 +11,7 @@ import base64
 from io import BytesIO
 import random
 import string
+import os
 import cloudinary.uploader
 from urllib.parse import urlencode
 from PIL import Image
@@ -37,6 +38,8 @@ def generar_qr_cloudinary_feedback(data: str) -> str:
     buffer.seek(0)
     result = cloudinary.uploader.upload(buffer, folder="feedback_qr")
     return result["secure_url"]
+
+PUBLIC_FRONTEND_FEEDBACK_URL = os.getenv("VITE_PUBLIC_FRONTEND_FEEDBACK_URL", "https://tydy.pro/feedback")
 
 def comprimir_imagen(file, quality: int = 70):
     """
@@ -177,24 +180,35 @@ def crear_feedback_list(
     Crea un QR con nombre y direccion codificados, sube la imagen a Cloudinary,
     almacena el registro en la tabla feedback_qr y devuelve confirmación.
     """
+    empresa = db.query(models.Empresa).filter(
+        models.Empresa.id == payload.empresa_id,
+        models.Empresa.company_id == current_user.company_id,
+    ).first()
+    if not empresa:
+        raise HTTPException(status_code=404, detail="Empresa no encontrada")
+
+    nombre_legacy = empresa.nombre
+    contexto_legacy = payload.contexto or ""
+
     # 1) Construir la URL base con segmentos de ruta codificados
     from urllib.parse import quote
 
-    base_url = "https://tydy.pro/feedback/"
-    nombre_encoded = quote(payload.nombre or "", safe="")
-    direccion_encoded = quote(payload.direccion or "", safe="")
+    base_url = PUBLIC_FRONTEND_FEEDBACK_URL.rstrip("/")
+    nombre_encoded = quote(nombre_legacy, safe="")
+    direccion_encoded = quote(contexto_legacy, safe="")
     company_id_encoded = quote(str(current_user.company_id) if current_user.company_id else "", safe="")
-    full_url = f"{base_url}{nombre_encoded}/{direccion_encoded}/{company_id_encoded}"
+    full_url = f"{base_url}?empresa_id={quote(str(empresa.id), safe='')}&contexto={direccion_encoded}&company_id={company_id_encoded}&empresa={nombre_encoded}"
 
     # 2) Generar QR y subirlo a Cloudinary (carpeta dedicada)
     qr_url = generar_qr_cloudinary_feedback(full_url)
 
     # 3) Guardar registro mínimo en DB (solo id, url y referencias)
-    dir_value = payload.direccion or ""
     feedback = models.FeedbackQR(
         url=qr_url,
-        nombre=payload.nombre,
-        direccion=dir_value,
+        empresa_id=empresa.id,
+        contexto=payload.contexto,
+        nombre=nombre_legacy,
+        direccion=contexto_legacy,
         company_id=current_user.company_id,
         usuario_id=current_user.id,
     )
@@ -207,6 +221,8 @@ def crear_feedback_list(
         "detail": "OK: la imagen ha sido generada",
         "id": str(feedback.id),
         "url": feedback.url,
+        "empresa_id": feedback.empresa_id,
+        "contexto": feedback.contexto,
         "nombre": feedback.nombre,
         "direccion": feedback.direccion
     }
@@ -241,22 +257,47 @@ def actualizar_feedback_qr(
     if not feedback:
         raise HTTPException(status_code=404, detail="Feedback QR no encontrado")
 
-    # Usar valores nuevos si vienen en el payload, sino mantener los actuales
-    nuevo_nombre = payload.nombre if payload.nombre is not None else feedback.nombre
-    nueva_direccion = payload.direccion if payload.direccion is not None else feedback.direccion
+    empresa = None
+    if payload.empresa_id is not None:
+        empresa = db.query(models.Empresa).filter(
+            models.Empresa.id == payload.empresa_id,
+            models.Empresa.company_id == current_user.company_id,
+        ).first()
+        if not empresa:
+            raise HTTPException(status_code=404, detail="Empresa no encontrada")
+    elif feedback.empresa_id:
+        empresa = db.query(models.Empresa).filter(
+            models.Empresa.id == feedback.empresa_id,
+            models.Empresa.company_id == current_user.company_id,
+        ).first()
+
+    nuevo_nombre = payload.nombre if payload.nombre is not None else (empresa.nombre if empresa else feedback.nombre)
+    nuevo_contexto = payload.contexto if payload.contexto is not None else feedback.contexto
+    nueva_direccion = payload.direccion if payload.direccion is not None else (
+        nuevo_contexto if nuevo_contexto is not None else feedback.direccion
+    )
 
     # Reconstruir la URL con los nuevos valores (incluyendo company_id)
     from urllib.parse import quote
-    base_url = "https://tydy.pro/feedback/"
+    base_url = PUBLIC_FRONTEND_FEEDBACK_URL.rstrip("/")
     nombre_encoded = quote(nuevo_nombre or "", safe="")
     direccion_encoded = quote(nueva_direccion or "", safe="")
     company_id_encoded = quote(str(feedback.company_id) or "", safe="")
-    full_url = f"{base_url}{nombre_encoded}/{direccion_encoded}/{company_id_encoded}"
+    empresa_id_encoded = quote(str(feedback.empresa_id), safe="") if feedback.empresa_id else ""
+    if empresa_id_encoded:
+        full_url = f"{base_url}?empresa_id={empresa_id_encoded}&contexto={direccion_encoded}&company_id={company_id_encoded}&empresa={nombre_encoded}"
+    else:
+        full_url = f"{base_url}/{nombre_encoded}/{direccion_encoded}/{company_id_encoded}"
 
     # Regenerar QR en Cloudinary
     qr_url = generar_qr_cloudinary_feedback(full_url)
 
     # Actualizar registro
+    if empresa:
+        feedback.empresa_id = empresa.id
+    elif payload.empresa_id is not None:
+        feedback.empresa_id = None
+    feedback.contexto = nuevo_contexto
     feedback.nombre = nuevo_nombre
     feedback.direccion = nueva_direccion
     feedback.url = qr_url
@@ -293,8 +334,10 @@ def eliminar_feedback_qr(
 # -----------------------------
 @router.post("/feedback-user", response_model=schemas.FeedbackResponse)
 async def crear_feedback_user(
-    empresa: str = Form(...),
-    direccion: str = Form(...),
+    empresa: str | None = Form(None),
+    direccion: str | None = Form(None),
+    empresa_id: UUID | None = Form(None),
+    contexto: str | None = Form(None),
     calificacion: float = Form(...),
     company_id: UUID = Form(...),
     nombre: str | None = Form(None),
@@ -304,32 +347,63 @@ async def crear_feedback_user(
 ):
     """
     Crea un registro de feedback de un usuario SIN requerir autenticación.
-    La foto es opcional; si se envía, se sube a Cloudinary y se guarda la URL.
-    Los datos se reciben como form-data (para soportar archivo de imagen).
-
-    Para asociar el feedback a una empresa, se intenta buscar un registro
-    de FeedbackQR que coincida con empresa (nombre) y direccion, y se usa
-    su company_id/usuario_id si existe.
+    Soporta el payload nuevo con empresa_id/contexto y mantiene compatibilidad
+    con el payload legacy empresa/direccion.
     """
     foto_url = None
     if foto is not None:
-        # Subir imagen a Cloudinary en carpeta dedicada, comprimida
         imagen_comprimida = comprimir_imagen(foto.file, quality=70)
         result = cloudinary.uploader.upload(imagen_comprimida, folder="feedback_fotos")
         foto_url = result.get("secure_url")
 
-    # Intentar asociar a una empresa usando FeedbackQR (nombre/direccion)
-    feedback_qr = db.query(models.FeedbackQR).filter(
-        models.FeedbackQR.nombre == empresa,
-        models.FeedbackQR.direccion == direccion,
-    ).first()
+    if empresa_id is None and not empresa:
+        raise HTTPException(status_code=400, detail="Debes proporcionar empresa_id o empresa")
 
+    empresa_model = None
+    feedback_qr = None
+
+    if empresa_id:
+        empresa_model = db.query(models.Empresa).filter(
+            models.Empresa.id == empresa_id,
+            models.Empresa.company_id == company_id,
+        ).first()
+        if not empresa_model:
+            raise HTTPException(status_code=404, detail="Empresa no encontrada")
+
+        feedback_qr = db.query(models.FeedbackQR).filter(
+            models.FeedbackQR.company_id == company_id,
+            models.FeedbackQR.empresa_id == empresa_id,
+            models.FeedbackQR.contexto == contexto,
+        ).first()
+    else:
+        feedback_qr = db.query(models.FeedbackQR).filter(
+            models.FeedbackQR.company_id == company_id,
+            models.FeedbackQR.nombre == empresa,
+            models.FeedbackQR.direccion == direccion,
+        ).first()
+        if feedback_qr and feedback_qr.empresa_id:
+            empresa_model = db.query(models.Empresa).filter(
+                models.Empresa.id == feedback_qr.empresa_id,
+                models.Empresa.company_id == company_id,
+            ).first()
+
+    if not empresa_model and feedback_qr and feedback_qr.empresa_id:
+        empresa_model = db.query(models.Empresa).filter(
+            models.Empresa.id == feedback_qr.empresa_id,
+            models.Empresa.company_id == company_id,
+        ).first()
+
+    empresa_snapshot = (empresa_model.nombre if empresa_model else empresa) or ""
+    contexto_normalizado = contexto if contexto is not None else direccion
+    contexto_snapshot = contexto_normalizado or ""
     usuario_id = feedback_qr.usuario_id if feedback_qr else None
 
     nuevo_feedback = models.Feedback(
         nombre=nombre,
-        empresa=empresa,
-        direccion=direccion,
+        empresa=empresa_snapshot,
+        direccion=contexto_snapshot,
+        empresa_id=empresa_model.id if empresa_model else None,
+        contexto=contexto_normalizado,
         calificacion=calificacion,
         comentario=comentario,
         foto=foto_url,
@@ -367,6 +441,8 @@ async def actualizar_feedback_user(
     feedback_id: UUID,
     empresa: str | None = Form(None),
     direccion: str | None = Form(None),
+    empresa_id: UUID | None = Form(None),
+    contexto: str | None = Form(None),
     calificacion: float | None = Form(None),
     nombre: str | None = Form(None),
     comentario: str | None = Form(None),
@@ -385,11 +461,26 @@ async def actualizar_feedback_user(
     if not feedback:
         raise HTTPException(status_code=404, detail="Feedback no encontrado")
 
-    # Actualizar campos si se enviaron
+    empresa_model = None
+    if empresa_id is not None:
+        empresa_model = db.query(models.Empresa).filter(
+            models.Empresa.id == empresa_id,
+            models.Empresa.company_id == current_user.company_id,
+        ).first()
+        if not empresa_model:
+            raise HTTPException(status_code=404, detail="Empresa no encontrada")
+
     if empresa is not None:
         feedback.empresa = empresa
+    if empresa_model is not None:
+        feedback.empresa_id = empresa_model.id
+        feedback.empresa = empresa_model.nombre
     if direccion is not None:
         feedback.direccion = direccion
+    if contexto is not None:
+        feedback.contexto = contexto
+        if direccion is None:
+            feedback.direccion = contexto
     if calificacion is not None:
         feedback.calificacion = calificacion
     if nombre is not None:

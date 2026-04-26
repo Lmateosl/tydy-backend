@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Text, TIMESTAMP, ForeignKey, Numeric, Table, Boolean, Integer
+from sqlalchemy import Column, String, Text, TIMESTAMP, ForeignKey, Numeric, Table, Boolean, Integer, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 import uuid
 from .database import Base
@@ -31,6 +31,7 @@ class Company(Base):
     listas_actividades = relationship("ListaActividad", back_populates="own_company")
     feedbacks_qr = relationship("FeedbackQR", back_populates="own_company")
     feedbacks = relationship("Feedback", back_populates="own_company")
+    cliente_empresas = relationship("ClienteEmpresa", back_populates="company")
 
 class Usuario(Base):
     __tablename__ = "usuarios"
@@ -57,6 +58,17 @@ class Usuario(Base):
     listas_actividades = relationship("ListaActividad", back_populates="creador")
     feedbacks_qr = relationship("FeedbackQR", back_populates="usuario")
     feedbacks = relationship("Feedback", back_populates="usuario")
+    empresas_cliente = relationship(
+        "ClienteEmpresa",
+        back_populates="usuario",
+        foreign_keys="ClienteEmpresa.usuario_id",
+        cascade="all, delete-orphan"
+    )
+    cliente_empresas_creadas = relationship(
+        "ClienteEmpresa",
+        back_populates="creador_asignacion",
+        foreign_keys="ClienteEmpresa.creado_por"
+    )
     supervisor = relationship("Usuario", remote_side=[id], backref="subordinados", foreign_keys=[supervisor_id])
     creador = relationship("Usuario", remote_side=[id], backref="usuarios_creados", foreign_keys=[creado_por])
     own_company = relationship("Company", back_populates="usuarios", foreign_keys=[company_id])
@@ -75,6 +87,29 @@ class Empresa(Base):
     own_company = relationship("Company", back_populates="empresas", foreign_keys=[company_id])
     creador = relationship("Usuario", back_populates="empresas")
     locaciones = relationship("Locacion", back_populates="empresa", cascade="all, delete")
+    clientes_asignados = relationship(
+        "ClienteEmpresa",
+        back_populates="empresa",
+        cascade="all, delete-orphan"
+    )
+
+class ClienteEmpresa(Base):
+    __tablename__ = "cliente_empresas"
+    __table_args__ = (
+        UniqueConstraint("usuario_id", "empresa_id", name="uq_cliente_empresas_usuario_empresa"),
+    )
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    usuario_id = Column(UUID(as_uuid=True), ForeignKey("usuarios.id"), nullable=False)
+    empresa_id = Column(UUID(as_uuid=True), ForeignKey("empresas.id"), nullable=False)
+    company_id = Column(UUID(as_uuid=True), ForeignKey("companies.id"), nullable=False)
+    creado_en = Column(DateTime, default=datetime.utcnow, nullable=False)
+    creado_por = Column(UUID(as_uuid=True), ForeignKey("usuarios.id"), nullable=False)
+
+    usuario = relationship("Usuario", back_populates="empresas_cliente", foreign_keys=[usuario_id])
+    empresa = relationship("Empresa", back_populates="clientes_asignados", foreign_keys=[empresa_id])
+    company = relationship("Company", back_populates="cliente_empresas", foreign_keys=[company_id])
+    creador_asignacion = relationship("Usuario", back_populates="cliente_empresas_creadas", foreign_keys=[creado_por])
 
 class Locacion(Base):
     __tablename__ = "locaciones"
@@ -221,6 +256,8 @@ class FeedbackQR(Base):
     url = Column(Text, nullable=False)
     nombre = Column(Text, nullable=False)
     direccion = Column(Text, nullable=False)
+    empresa_id = Column(UUID(as_uuid=True), ForeignKey("empresas.id"), nullable=True)
+    contexto = Column(Text, nullable=True)
     creado_en = Column(DateTime, default=datetime.utcnow)
     company_id = Column(UUID(as_uuid=True), ForeignKey("companies.id"), nullable=True)
     usuario_id = Column(UUID(as_uuid=True), ForeignKey("usuarios.id"), nullable=True)
@@ -228,6 +265,7 @@ class FeedbackQR(Base):
     # Relaciones
     own_company = relationship("Company", back_populates="feedbacks_qr", foreign_keys=[company_id])
     usuario = relationship("Usuario", back_populates="feedbacks_qr", foreign_keys=[usuario_id])
+    empresa_rel = relationship("Empresa", foreign_keys=[empresa_id])
 
 class Feedback(Base):
     __tablename__ = "feedback"
@@ -236,6 +274,8 @@ class Feedback(Base):
     nombre = Column(Text, nullable=True)
     empresa = Column(Text, nullable=False)
     direccion = Column(Text, nullable=False)
+    empresa_id = Column(UUID(as_uuid=True), ForeignKey("empresas.id"), nullable=True)
+    contexto = Column(Text, nullable=True)
     calificacion = Column(Numeric(2, 1), nullable=False)
     comentario = Column(Text, nullable=True)
     foto = Column(Text, nullable=True)
@@ -246,3 +286,4 @@ class Feedback(Base):
 
     own_company = relationship("Company", back_populates="feedbacks", foreign_keys=[company_id])
     usuario = relationship("Usuario", back_populates="feedbacks", foreign_keys=[usuario_id])
+    empresa_rel = relationship("Empresa", foreign_keys=[empresa_id])

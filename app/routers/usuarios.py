@@ -18,6 +18,21 @@ load_dotenv()
 
 router = APIRouter(prefix="/usuarios", tags=["Usuarios"])
 
+def _validar_admin(current_user: Usuario):
+    if current_user.rol != "admin":
+        raise HTTPException(status_code=403, detail="No tienes permisos")
+
+def _obtener_cliente_del_admin(db: Session, usuario_id: UUID, current_user: Usuario):
+    usuario = db.query(models.Usuario).filter(
+        models.Usuario.id == usuario_id,
+        models.Usuario.company_id == current_user.company_id
+    ).first()
+    if not usuario:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+    if usuario.rol != "cliente":
+        raise HTTPException(status_code=400, detail="El usuario no tiene rol cliente")
+    return usuario
+
 # Ruta para obtener la companía del usuario actual
 @router.get("/mi-compania", response_model=schemas.ComapnyResponse)
 def obtener_compania_actual(
@@ -87,6 +102,85 @@ def obtener_listas_actividades_creadas(
     current_user: Usuario = Security(get_current_user),
 ):
     return db.query(ListaActividad).filter(ListaActividad.usuario_id == current_user.id).all()
+
+@router.get("/{usuario_id}/empresas-cliente", response_model=List[schemas.ClienteEmpresaResponse])
+def obtener_empresas_cliente(
+    usuario_id: UUID = Path(..., description="ID del usuario cliente"),
+    db: Session = Depends(get_db),
+    current_user: Usuario = Security(get_current_user),
+):
+    _validar_admin(current_user)
+    _obtener_cliente_del_admin(db, usuario_id, current_user)
+
+    asignaciones = db.query(models.ClienteEmpresa).filter(
+        models.ClienteEmpresa.usuario_id == usuario_id,
+        models.ClienteEmpresa.company_id == current_user.company_id
+    ).all()
+    return asignaciones
+
+@router.post("/{usuario_id}/empresas-cliente/{empresa_id}", response_model=schemas.ClienteEmpresaResponse)
+def asignar_empresa_a_cliente(
+    usuario_id: UUID = Path(..., description="ID del usuario cliente"),
+    empresa_id: UUID = Path(..., description="ID de la empresa cliente"),
+    db: Session = Depends(get_db),
+    current_user: Usuario = Security(get_current_user),
+):
+    _validar_admin(current_user)
+    usuario = _obtener_cliente_del_admin(db, usuario_id, current_user)
+
+    empresa = db.query(models.Empresa).filter(
+        models.Empresa.id == empresa_id,
+        models.Empresa.company_id == current_user.company_id
+    ).first()
+    if not empresa:
+        raise HTTPException(status_code=404, detail="Empresa no encontrada")
+
+    asignacion_existente = db.query(models.ClienteEmpresa).filter(
+        models.ClienteEmpresa.usuario_id == usuario.id,
+        models.ClienteEmpresa.empresa_id == empresa.id
+    ).first()
+    if asignacion_existente:
+        raise HTTPException(status_code=400, detail="La empresa ya está asignada a este cliente")
+
+    asignacion = models.ClienteEmpresa(
+        usuario_id=usuario.id,
+        empresa_id=empresa.id,
+        company_id=current_user.company_id,
+        creado_por=current_user.id
+    )
+    db.add(asignacion)
+    db.commit()
+    db.refresh(asignacion)
+    return asignacion
+
+@router.delete("/{usuario_id}/empresas-cliente/{empresa_id}")
+def quitar_empresa_a_cliente(
+    usuario_id: UUID = Path(..., description="ID del usuario cliente"),
+    empresa_id: UUID = Path(..., description="ID de la empresa cliente"),
+    db: Session = Depends(get_db),
+    current_user: Usuario = Security(get_current_user),
+):
+    _validar_admin(current_user)
+    _obtener_cliente_del_admin(db, usuario_id, current_user)
+
+    empresa = db.query(models.Empresa).filter(
+        models.Empresa.id == empresa_id,
+        models.Empresa.company_id == current_user.company_id
+    ).first()
+    if not empresa:
+        raise HTTPException(status_code=404, detail="Empresa no encontrada")
+
+    asignacion = db.query(models.ClienteEmpresa).filter(
+        models.ClienteEmpresa.usuario_id == usuario_id,
+        models.ClienteEmpresa.empresa_id == empresa_id,
+        models.ClienteEmpresa.company_id == current_user.company_id
+    ).first()
+    if not asignacion:
+        raise HTTPException(status_code=404, detail="Asignación no encontrada")
+
+    db.delete(asignacion)
+    db.commit()
+    return {"detail": "Asignación eliminada correctamente"}
 
 @router.post("/", response_model=schemas.UsuarioResponse)
 def crear_usuario(

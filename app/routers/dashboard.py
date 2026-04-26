@@ -21,6 +21,14 @@ def _rango_hoy_utc():
     return inicio, fin
 
 
+def _aplicar_filtro_fecha(query, columna, desde: Optional[datetime], hasta: Optional[datetime]):
+    if desde:
+        query = query.filter(columna >= desde)
+    if hasta:
+        query = query.filter(columna <= hasta)
+    return query
+
+
 def _validar_permisos_dashboard(current_user: Usuario):
     if current_user.rol.lower() not in ["admin", "supervisor"]:
         raise HTTPException(status_code=403, detail="No tienes permisos")
@@ -181,10 +189,12 @@ def obtener_riesgos_operativos(
             ),
         )
     )
-    if desde:
-        locaciones_query = locaciones_query.filter(models.ActividadUsuario.hora_inicio >= desde)
-    if hasta:
-        locaciones_query = locaciones_query.filter(models.ActividadUsuario.hora_inicio <= hasta)
+    locaciones_query = _aplicar_filtro_fecha(
+        locaciones_query,
+        models.ActividadUsuario.hora_inicio,
+        desde,
+        hasta,
+    )
     locaciones_con_problemas = [
         {
             "locacion_id": fila.locacion_id,
@@ -225,10 +235,12 @@ def obtener_riesgos_operativos(
             ),
         )
     )
-    if desde:
-        empleados_query = empleados_query.filter(models.ActividadUsuario.hora_inicio >= desde)
-    if hasta:
-        empleados_query = empleados_query.filter(models.ActividadUsuario.hora_inicio <= hasta)
+    empleados_query = _aplicar_filtro_fecha(
+        empleados_query,
+        models.ActividadUsuario.hora_inicio,
+        desde,
+        hasta,
+    )
     empleados_con_pendientes = [
         {
             "usuario_id": fila.usuario_id,
@@ -263,14 +275,12 @@ def obtener_riesgos_operativos(
             func.length(func.trim(models.ActividadUsuario.comentario)) > 0,
         )
     )
-    if desde:
-        comentarios_query = comentarios_query.filter(
-            func.coalesce(models.ActividadUsuario.hora_fin, models.ActividadUsuario.hora_inicio) >= desde
-        )
-    if hasta:
-        comentarios_query = comentarios_query.filter(
-            func.coalesce(models.ActividadUsuario.hora_fin, models.ActividadUsuario.hora_inicio) <= hasta
-        )
+    comentarios_query = _aplicar_filtro_fecha(
+        comentarios_query,
+        func.coalesce(models.ActividadUsuario.hora_fin, models.ActividadUsuario.hora_inicio),
+        desde,
+        hasta,
+    )
     comentarios_recientes = [
         {
             "actividad_id": actividad.id,
@@ -292,10 +302,12 @@ def obtener_riesgos_operativos(
         models.Feedback.company_id == company_id,
         models.Feedback.calificacion <= 2,
     )
-    if desde:
-        feedback_query = feedback_query.filter(models.Feedback.creado_en >= desde)
-    if hasta:
-        feedback_query = feedback_query.filter(models.Feedback.creado_en <= hasta)
+    feedback_query = _aplicar_filtro_fecha(
+        feedback_query,
+        models.Feedback.creado_en,
+        desde,
+        hasta,
+    )
     feedback_negativo_reciente = [
         {
             "feedback_id": feedback.id,

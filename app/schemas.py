@@ -108,6 +108,22 @@ class EmpresaResponse(EmpresaBase):
     class Config:
         from_attributes = True
 
+class ClienteEmpresaAsignacion(BaseModel):
+    usuario_id: UUID
+    empresa_id: UUID
+
+class ClienteEmpresaResponse(BaseModel):
+    id: UUID
+    usuario_id: UUID
+    empresa_id: UUID
+    company_id: UUID
+    creado_en: datetime
+    creado_por: UUID
+    empresa: EmpresaResponse
+
+    class Config:
+        from_attributes = True
+
 # Locacion
 # Este modelo representa la estructura de los datos de la locación
 class LocacionBase(BaseModel):
@@ -310,25 +326,20 @@ class AreaMini(BaseModel):
 # Feedback QR Schemas
 # -------------------------
 class FeedbackQRCreate(BaseModel):
-    """
-    Payload que envía el cliente antes de generar el QR.
-    Estos datos (nombre y direccion) se codificarán dentro del QR,
-    NO se guardan en la tabla feedback_qr.
-    """
-    nombre: str
-    direccion: Optional[str] = None
+    empresa_id: UUID
+    contexto: Optional[str] = None
 
 class FeedbackQRUpdate(BaseModel):
+    empresa_id: Optional[UUID] = None
+    contexto: Optional[str] = None
     nombre: Optional[str] = None
     direccion: Optional[str] = None
 
 class FeedbackQRResponse(BaseModel):
-    """
-    Respuesta mínima al crear/consultar un FeedbackQR.
-    Solo devolvemos el id del registro y la URL del QR generado.
-    """
     id: UUID
     url: str
+    empresa_id: Optional[UUID] = None
+    contexto: Optional[str] = None
     nombre: str
     direccion: Optional[str] = None
 
@@ -435,14 +446,11 @@ class AreaMini(BaseModel):
 # Feedback Schemas
 # -------------------------
 class FeedbackCreate(BaseModel):
-    """
-    Payload para crear un registro de feedback.
-    nombre, empresa, comentario y foto son opcionales.
-    direccion y calificacion son obligatorios.
-    """
     nombre: Optional[str] = None
-    empresa: str = None
-    direccion: str
+    empresa: Optional[str] = None
+    direccion: Optional[str] = None
+    empresa_id: Optional[UUID] = None
+    contexto: Optional[str] = None
     calificacion: float
     company_id: UUID
     comentario: Optional[str] = None
@@ -450,26 +458,23 @@ class FeedbackCreate(BaseModel):
 
 
 class FeedbackUpdate(BaseModel):
-    """
-    Payload para actualizar un registro de feedback existente.
-    Todos los campos son opcionales.
-    """
     nombre: Optional[str] = None
     empresa: Optional[str] = None
     direccion: Optional[str] = None
+    empresa_id: Optional[UUID] = None
+    contexto: Optional[str] = None
     calificacion: Optional[float] = None
     comentario: Optional[str] = None
     foto: Optional[str] = None
 
 
 class FeedbackResponse(BaseModel):
-    """
-    Respuesta al consultar/crear/actualizar un feedback.
-    """
     id: UUID
     nombre: Optional[str] = None
-    empresa: str = None
-    direccion: str
+    empresa: Optional[str] = None
+    direccion: Optional[str] = None
+    empresa_id: Optional[UUID] = None
+    contexto: Optional[str] = None
     calificacion: float
     comentario: Optional[str] = None
     foto: Optional[str] = None
@@ -524,3 +529,15 @@ class DashboardRiesgosResponse(BaseModel):
     empleados_con_pendientes: List[DashboardRiesgoEmpleadoPendienteItem] = []
     comentarios_recientes: List[DashboardRiesgoComentarioRecienteItem] = []
     feedback_negativo_reciente: List[DashboardRiesgoFeedbackNegativoItem] = []
+
+
+class PortalClienteResumenResponse(BaseModel):
+    actividades_hoy: int = 0
+    actividades_completadas_hoy: int = 0
+    actividades_pendientes_hoy: int = 0
+    actividades_vencidas: int = 0
+    empleados_activos_hoy: int = 0
+    locaciones_con_actividad_hoy: int = 0
+    evidencias_faltantes: int = 0
+    feedbacks_negativos: int = 0
+    incidentes_abiertos: int = 0
