@@ -13,6 +13,13 @@ from typing import List
 router = APIRouter(prefix="/locaciones", tags=["Locaciones"])
 
 LOCATIONIQ_API_KEY = os.getenv("LOCATIONIQ_API_KEY")  # Debes tener esta variable en tu entorno
+LOCATIONIQ_REFERER = os.getenv("LOCATIONIQ_REFERER", "http://localhost:5173")
+
+def locationiq_headers():
+    return {
+        "User-Agent": "qr-app/1.0",
+        "Referer": LOCATIONIQ_REFERER,
+    }
 
 async def obtener_coordenadas(direccion: str):
     url = "https://us1.locationiq.com/v1/search.php"
@@ -21,9 +28,10 @@ async def obtener_coordenadas(direccion: str):
         "q": direccion,
         "format": "json",
     }
-    headers = {"User-Agent": "qr-app/1.0"}
     async with httpx.AsyncClient() as client:
-        response = await client.get(url, params=params, headers=headers)
+        response = await client.get(url, params=params, headers=locationiq_headers())
+        if response.status_code == 403:
+            raise HTTPException(status_code=502, detail="LocationIQ rechazó el token o el referrer configurado")
         response.raise_for_status()
         data = response.json()
         if not data:
@@ -36,6 +44,26 @@ async def obtener_coordenadas(direccion: str):
             }
             for item in data
         ]
+
+async def obtener_direccion_por_coordenadas(latitud: float, longitud: float):
+    url = "https://us1.locationiq.com/v1/reverse"
+    params = {
+        "key": LOCATIONIQ_API_KEY,
+        "lat": latitud,
+        "lon": longitud,
+        "format": "json",
+    }
+    async with httpx.AsyncClient() as client:
+        response = await client.get(url, params=params, headers=locationiq_headers())
+        if response.status_code == 403:
+            raise HTTPException(status_code=502, detail="LocationIQ rechazó el token o el referrer configurado")
+        response.raise_for_status()
+        data = response.json()
+        return {
+            "display_name": data.get("display_name"),
+            "latitud": float(data.get("lat", latitud)),
+            "longitud": float(data.get("lon", longitud))
+        }
 
 @router.get("/coordenadas/")
 async def buscar_coordenadas(direccion: str):
@@ -50,6 +78,23 @@ async def buscar_coordenadas(direccion: str):
         raise HTTPException(status_code=404, detail="No se encontraron resultados para la dirección")
 
     return resultados
+
+@router.get("/reverse/")
+async def buscar_direccion_por_coordenadas(latitud: float, longitud: float):
+    """
+    Devuelve una dirección legible usando coordenadas seleccionadas en el mapa.
+    """
+    if not (-90 <= latitud <= 90):
+        raise HTTPException(status_code=400, detail="La latitud debe estar entre -90 y 90")
+
+    if not (-180 <= longitud <= 180):
+        raise HTTPException(status_code=400, detail="La longitud debe estar entre -180 y 180")
+
+    resultado = await obtener_direccion_por_coordenadas(latitud, longitud)
+    if not resultado.get("display_name"):
+        raise HTTPException(status_code=404, detail="No se encontró una dirección para estas coordenadas")
+
+    return resultado
 
 # ✅ Crear locación asignando el usuario autenticado como creador
 @router.post("/", response_model=LocacionOut)
@@ -66,6 +111,9 @@ def crear_locacion(
 
     if data.longitud is not None and not (-180 <= data.longitud <= 180):
         raise HTTPException(status_code=400, detail="La longitud debe estar entre -180 y 180")
+
+    if data.radio_verificacion_metros is not None and data.radio_verificacion_metros <= 0:
+        raise HTTPException(status_code=400, detail="El radio de verificación debe ser mayor a 0")
     
     locacion = Locacion(**data.dict(), usuario_id=current_user.id, company_id=current_user.company_id)
     db.add(locacion)
@@ -115,6 +163,9 @@ def actualizar_locacion(
 
     if data.longitud is not None and not (-180 <= data.longitud <= 180):
         raise HTTPException(status_code=400, detail="La longitud debe estar entre -180 y 180")
+
+    if data.radio_verificacion_metros is not None and data.radio_verificacion_metros <= 0:
+        raise HTTPException(status_code=400, detail="El radio de verificación debe ser mayor a 0")
     
     locacion = db.query(Locacion).filter(
         Locacion.id == locacion_id,

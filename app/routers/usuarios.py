@@ -335,6 +335,7 @@ def obtener_estructura_usuario(
             direccion=locacion.direccion,
             latitud=float(locacion.latitud) if locacion.latitud else None,
             longitud=float(locacion.longitud) if locacion.longitud else None,
+            radio_verificacion_metros=locacion.radio_verificacion_metros or 1000,
             empresa=schemas.EmpresaMini(
                 id=empresa.id,
                 nombre=empresa.nombre,

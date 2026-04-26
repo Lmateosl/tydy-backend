@@ -12,14 +12,69 @@ from app.auth.dependencies import get_current_user
 import io
 from typing import List, Optional
 from sqlalchemy.orm import joinedload
+from sqlalchemy import func
 import pandas as pd
 import os
 from PIL import Image
 from uuid import uuid4
+import math
+from pydantic import EmailStr, TypeAdapter, ValidationError
 
 router = APIRouter(prefix="/actividades-usuario", tags=["Actividades por usuario"])
 UPLOAD_DIR = "uploads/evidencias"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
+email_adapter = TypeAdapter(EmailStr)
+
+def calcular_distancia_metros(lat1, lon1, lat2, lon2):
+    if None in [lat1, lon1, lat2, lon2]:
+        return None
+
+    lat1 = float(lat1)
+    lon1 = float(lon1)
+    lat2 = float(lat2)
+    lon2 = float(lon2)
+    radio_tierra = 6371e3
+    d_lat = math.radians(lat2 - lat1)
+    d_lon = math.radians(lon2 - lon1)
+    a = (
+        math.sin(d_lat / 2) * math.sin(d_lat / 2)
+        + math.cos(math.radians(lat1))
+        * math.cos(math.radians(lat2))
+        * math.sin(d_lon / 2)
+        * math.sin(d_lon / 2)
+    )
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+    return round(radio_tierra * c, 2)
+
+def resolver_estado_verificacion(actividad: ActividadUsuario, locacion: Optional[Locacion]):
+    radio_verificacion = float(locacion.radio_verificacion_metros) if locacion and locacion.radio_verificacion_metros else 1000.0
+    umbral_precision_baja = 100.0
+
+    tiene_inicio = actividad.latitud_inicio is not None and actividad.longitud_inicio is not None
+    tiene_cierre = actividad.latitud_fin is not None and actividad.longitud_fin is not None
+    tiene_metodos = bool(actividad.metodo_inicio) and bool(actividad.metodo_fin)
+
+    if not (tiene_inicio and tiene_cierre and tiene_metodos):
+        return "requiere_revision"
+
+    distancia_inicio = actividad.distancia_validacion
+    distancia_fin = actividad.distancia_fin
+    if distancia_inicio is None or distancia_fin is None:
+        return "requiere_revision"
+
+    # Fuera del radio se permite operativamente, pero queda marcado para revisión.
+    if distancia_inicio > radio_verificacion or distancia_fin > radio_verificacion:
+        return "requiere_revision"
+
+    precision_inicio = float(actividad.precision_inicio) if actividad.precision_inicio is not None else None
+    precision_fin = float(actividad.precision_fin) if actividad.precision_fin is not None else None
+    if (
+        (precision_inicio is not None and precision_inicio > umbral_precision_baja)
+        or (precision_fin is not None and precision_fin > umbral_precision_baja)
+    ):
+        return "verificada_con_baja_precision"
+
+    return "verificada"
 
 def comprimir_imagen(imagen_path: str, calidad: int = 75, max_ancho: int = 800):
     try:
@@ -48,7 +103,9 @@ def crear_actividad(
         **actividad.dict(exclude_unset=True),
         hora_inicio=datetime.utcnow(),
         company_id=current_user.company_id,
-        usuario_id=current_user.id
+        usuario_id=current_user.id,
+        supervisor_id=current_user.supervisor_id,
+        estado_verificacion="iniciada"
     )
     db.add(nueva)
     db.commit()
@@ -59,6 +116,8 @@ def crear_actividad(
 def exportar_actividades(
     usuario_id: Optional[UUID] = Query(None),
     finalizada: Optional[bool] = Query(None),
+    empresa: Optional[str] = Query(None),
+    estado_verificacion: Optional[str] = Query(None),
     desde: Optional[datetime] = Query(None),
     hasta: Optional[datetime] = Query(None),
     formato: str = Query("excel"),
@@ -79,6 +138,18 @@ def exportar_actividades(
         query = query.filter(ActividadUsuario.usuario_id == usuario_id)
     if finalizada is not None:
         query = query.filter(ActividadUsuario.finalizada == finalizada)
+    if empresa:
+        query = (
+            query.join(ActividadUsuario.usuario)
+            .join(Usuario.area)
+            .join(Area.locacion)
+            .join(Locacion.empresa)
+            .filter(func.lower(Empresa.nombre) == empresa.strip().lower())
+        )
+    if estado_verificacion:
+        query = query.filter(
+            func.lower(ActividadUsuario.estado_verificacion) == estado_verificacion.strip().lower()
+        )
     if desde:
         query = query.filter(ActividadUsuario.hora_inicio >= desde)
     if hasta:
@@ -176,6 +247,11 @@ def finalizar_actividad(
     actividad_id: UUID,
     background_tasks: BackgroundTasks,
     comentario: Optional[str] = Form(None),
+    latitud_fin: Optional[float] = Form(None),
+    longitud_fin: Optional[float] = Form(None),
+    precision_fin: Optional[float] = Form(None),
+    distancia_fin: Optional[float] = Form(None),
+    metodo_fin: Optional[str] = Form(None),
     imagen: UploadFile = File(None),
     db: Session = Depends(get_db),
     current_user: Usuario = Security(get_current_user),
@@ -192,6 +268,7 @@ def finalizar_actividad(
         raise HTTPException(status_code=400, detail="Ya está finalizada")
 
     ruta_imagen = None
+    evidencia_obligatoria = bool(actividad.lista.imagen) if actividad.lista else False
     if imagen:
         if imagen.content_type not in ["image/jpeg", "image/png"]:
             raise HTTPException(status_code=400, detail="Formato de imagen no válido")
@@ -206,6 +283,26 @@ def finalizar_actividad(
     actividad.finalizada = True
     actividad.comentario = comentario or None
     actividad.hora_fin = datetime.utcnow()
+    actividad.latitud_fin = latitud_fin
+    actividad.longitud_fin = longitud_fin
+    actividad.precision_fin = precision_fin
+    locacion = actividad.usuario.area.locacion if actividad.usuario and actividad.usuario.area and actividad.usuario.area.locacion else None
+    distancia_fin_calculada = calcular_distancia_metros(
+        latitud_fin,
+        longitud_fin,
+        locacion.latitud if locacion else None,
+        locacion.longitud if locacion else None,
+    )
+    actividad.distancia_fin = distancia_fin_calculada if distancia_fin_calculada is not None else distancia_fin
+    actividad.metodo_fin = metodo_fin
+    actividad.duracion_segundos = int((actividad.hora_fin - actividad.hora_inicio).total_seconds())
+    actividad.evidencia_obligatoria = evidencia_obligatoria
+    actividad.evidencia_entregada = bool(ruta_imagen)
+    actividad.evidencia_subida_en = datetime.utcnow() if ruta_imagen else None
+    actividad.evidencia_usuario_id = current_user.id if ruta_imagen else None
+    actividad.evidencia_tipo = imagen.content_type if imagen else None
+    actividad.evidencia_nombre_archivo = imagen.filename if imagen else None
+    actividad.estado_verificacion = resolver_estado_verificacion(actividad, locacion)
     if ruta_imagen:
         actividad.imagen = ruta_imagen
     db.commit()
@@ -213,22 +310,31 @@ def finalizar_actividad(
 
     if actividad.comentario:
         company = db.query(Company).filter(Company.id == current_user.company_id).first()
-        if not company:
-            raise HTTPException(status_code=404, detail="No perteneces a ninguna empresa")
-        message = MessageSchema(
-            subject="Alerta al finalizar actividad",
-            recipients=[company.email],
-            body=f"El usuario {current_user.nombre} con número de identificación: {current_user.identificacion} finalizó una actividad y dejó un comentario:\n\n{actividad.comentario}.\n\n Entra en la plataforma para mis información",
-            subtype=MessageType.plain
-        )
-        fm = FastMail(conf)
-        background_tasks.add_task(fm.send_message, message)
+        if company and company.email:
+            try:
+                email_adapter.validate_python(company.email)
+                message = MessageSchema(
+                    subject="Alerta al finalizar actividad",
+                    recipients=[company.email],
+                    body=f"El usuario {current_user.nombre} con número de identificación: {current_user.identificacion} finalizó una actividad y dejó un comentario:\n\n{actividad.comentario}.\n\nEntra en la plataforma para más información.",
+                    subtype=MessageType.plain
+                )
+                fm = FastMail(conf)
+                background_tasks.add_task(fm.send_message, message)
+            except ValidationError:
+                print(f"Email de compañía inválido. No se envió alerta: {company.email}")
+            except Exception as e:
+                print(f"Error preparando alerta de finalización: {e}")
+        else:
+            print("No se envió alerta: la compañía no existe o no tiene email configurado")
     return actividad
 
 @router.get("/", response_model=List[ActividadUsuarioResponseExtendido])
 def listar_actividades(
     usuario_id: Optional[UUID] = Query(None),
     finalizada: Optional[bool] = Query(None),
+    empresa: Optional[str] = Query(None),
+    estado_verificacion: Optional[str] = Query(None),
     desde: Optional[datetime] = Query(None),
     hasta: Optional[datetime] = Query(None),
     db: Session = Depends(get_db),
@@ -251,6 +357,18 @@ def listar_actividades(
         query = query.filter(ActividadUsuario.usuario_id == usuario_id)
     if finalizada is not None:
         query = query.filter(ActividadUsuario.finalizada == finalizada)
+    if empresa:
+        query = (
+            query.join(ActividadUsuario.usuario)
+            .join(Usuario.area)
+            .join(Area.locacion)
+            .join(Locacion.empresa)
+            .filter(func.lower(Empresa.nombre) == empresa.strip().lower())
+        )
+    if estado_verificacion:
+        query = query.filter(
+            func.lower(ActividadUsuario.estado_verificacion) == estado_verificacion.strip().lower()
+        )
     if desde:
         query = query.filter(ActividadUsuario.hora_inicio >= desde)
     if hasta:

@@ -115,6 +115,7 @@ class LocacionBase(BaseModel):
     direccion: Optional[str] = None
     latitud: Optional[float] = None
     longitud: Optional[float] = None
+    radio_verificacion_metros: Optional[int] = 1000
 
 class LocacionCreate(LocacionBase):
     empresa_id: UUID
@@ -124,6 +125,7 @@ class LocacionUpdate(BaseModel):
     direccion: Optional[str] = None
     latitud: Optional[float] = None
     longitud: Optional[float] = None
+    radio_verificacion_metros: Optional[int] = None
 
 class LocacionOut(LocacionBase):
     id: UUID
@@ -135,6 +137,7 @@ class LocacionOut(LocacionBase):
     direccion: Optional[str] = None
     latitud: Optional[float] = None
     longitud: Optional[float] = None
+    radio_verificacion_metros: Optional[int] = 1000
 
     class Config:
         from_attributes = True
@@ -244,6 +247,16 @@ class ActividadUsuarioBase(BaseModel):
     lista_id: Optional[UUID] = None
     finalizada: Optional[bool] = False
     comentario: Optional[str] = None
+    latitud_inicio: Optional[float] = None
+    longitud_inicio: Optional[float] = None
+    precision_inicio: Optional[float] = None
+    distancia_validacion: Optional[float] = None
+    metodo_inicio: Optional[Literal["qr", "codigo", "manual"]] = None
+    latitud_fin: Optional[float] = None
+    longitud_fin: Optional[float] = None
+    precision_fin: Optional[float] = None
+    distancia_fin: Optional[float] = None
+    metodo_fin: Optional[Literal["qr", "codigo", "manual"]] = None
 
 class ActividadUsuarioCreate(ActividadUsuarioBase):
     pass
@@ -256,6 +269,15 @@ class ActividadUsuarioResponse(ActividadUsuarioBase):
     creado_en: datetime
     company_id: UUID
     usuario_id: UUID
+    supervisor_id: Optional[UUID] = None
+    estado_verificacion: Optional[str] = None
+    duracion_segundos: Optional[int] = None
+    evidencia_obligatoria: Optional[bool] = None
+    evidencia_entregada: Optional[bool] = None
+    evidencia_subida_en: Optional[datetime] = None
+    evidencia_usuario_id: Optional[UUID] = None
+    evidencia_tipo: Optional[str] = None
+    evidencia_nombre_archivo: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -344,6 +366,25 @@ class ActividadUsuarioResponseExtendido(BaseModel):
     finalizada: Optional[bool]
     comentario: Optional[str]
     imagen: Optional[str]
+    evidencia_obligatoria: Optional[bool]
+    evidencia_entregada: Optional[bool]
+    evidencia_subida_en: Optional[datetime]
+    evidencia_usuario_id: Optional[UUID]
+    evidencia_tipo: Optional[str]
+    evidencia_nombre_archivo: Optional[str]
+    latitud_inicio: Optional[float]
+    longitud_inicio: Optional[float]
+    precision_inicio: Optional[float]
+    distancia_validacion: Optional[float]
+    metodo_inicio: Optional[str]
+    latitud_fin: Optional[float]
+    longitud_fin: Optional[float]
+    precision_fin: Optional[float]
+    distancia_fin: Optional[float]
+    metodo_fin: Optional[str]
+    duracion_segundos: Optional[int]
+    supervisor_id: Optional[UUID]
+    estado_verificacion: Optional[str]
 
     usuario: ActividadUsuarioUsuario  # Aquí viene toda la jerarquía: area, locacion, empresa
     lista: Optional[ActividadUsuarioListaConActividades]
@@ -375,6 +416,7 @@ class LocacionMini(BaseModel):
     direccion: Optional[str]
     latitud: Optional[float]
     longitud: Optional[float]
+    radio_verificacion_metros: Optional[int] = 1000
     empresa: EmpresaMini
 
     class Config:
@@ -436,3 +478,49 @@ class FeedbackResponse(BaseModel):
     class Config:
         from_attributes = True
 
+
+class DashboardRiesgoLocacionItem(BaseModel):
+    locacion_id: Optional[UUID] = None
+    locacion_nombre: str
+    empresa_nombre: Optional[str] = None
+    total_problemas: int
+    actividades_no_verificadas: int
+    evidencias_faltantes: int
+
+
+class DashboardRiesgoEmpleadoPendienteItem(BaseModel):
+    usuario_id: Optional[UUID] = None
+    nombre: str
+    identificacion: Optional[str] = None
+    area_nombre: Optional[str] = None
+    locacion_nombre: Optional[str] = None
+    total_pendientes: int
+
+
+class DashboardRiesgoComentarioRecienteItem(BaseModel):
+    actividad_id: UUID
+    comentario: str
+    hora_inicio: datetime
+    hora_fin: Optional[datetime] = None
+    usuario_id: Optional[UUID] = None
+    usuario_nombre: Optional[str] = None
+    locacion_nombre: Optional[str] = None
+    empresa_nombre: Optional[str] = None
+    estado_verificacion: Optional[str] = None
+
+
+class DashboardRiesgoFeedbackNegativoItem(BaseModel):
+    feedback_id: UUID
+    nombre: Optional[str] = None
+    empresa: str
+    direccion: str
+    calificacion: float
+    comentario: Optional[str] = None
+    creado_en: datetime
+
+
+class DashboardRiesgosResponse(BaseModel):
+    locaciones_con_problemas: List[DashboardRiesgoLocacionItem] = []
+    empleados_con_pendientes: List[DashboardRiesgoEmpleadoPendienteItem] = []
+    comentarios_recientes: List[DashboardRiesgoComentarioRecienteItem] = []
+    feedback_negativo_reciente: List[DashboardRiesgoFeedbackNegativoItem] = []

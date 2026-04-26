@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Text, TIMESTAMP, ForeignKey, Numeric, Table, Boolean
+from sqlalchemy import Column, String, Text, TIMESTAMP, ForeignKey, Numeric, Table, Boolean, Integer
 from sqlalchemy.dialects.postgresql import UUID
 import uuid
 from .database import Base
@@ -88,6 +88,7 @@ class Locacion(Base):
     direccion = Column(Text)
     latitud = Column(Numeric(9, 6))
     longitud = Column(Numeric(9, 6))
+    radio_verificacion_metros = Column(Integer, nullable=True, default=1000)
 
     own_company = relationship("Company", back_populates="locaciones", foreign_keys=[company_id])
     empresa = relationship("Empresa", back_populates="locaciones")
@@ -179,6 +180,7 @@ class ActividadUsuario(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     lista_id = Column(UUID(as_uuid=True), ForeignKey("listas_actividades.id"), nullable=True)
     usuario_id = Column(UUID(as_uuid=True), ForeignKey("usuarios.id"), nullable=True)
+    supervisor_id = Column(UUID(as_uuid=True), ForeignKey("usuarios.id"), nullable=True)
     hora_inicio = Column(DateTime, nullable=False, default=datetime.utcnow)
     hora_fin = Column(DateTime, nullable=True)
     creado_en = Column(DateTime, default=datetime.utcnow)
@@ -186,8 +188,28 @@ class ActividadUsuario(Base):
     finalizada = Column(Boolean, nullable=True)
     comentario = Column(String, nullable=True)
     imagen = Column(Text, nullable=True)
+    evidencia_obligatoria = Column(Boolean, nullable=True)
+    evidencia_entregada = Column(Boolean, nullable=True)
+    evidencia_subida_en = Column(DateTime, nullable=True)
+    evidencia_usuario_id = Column(UUID(as_uuid=True), ForeignKey("usuarios.id"), nullable=True)
+    evidencia_tipo = Column(String, nullable=True)
+    evidencia_nombre_archivo = Column(String, nullable=True)
+    latitud_inicio = Column(Numeric(9, 6), nullable=True)
+    longitud_inicio = Column(Numeric(9, 6), nullable=True)
+    precision_inicio = Column(Numeric(10, 2), nullable=True)
+    distancia_validacion = Column(Numeric(10, 2), nullable=True)
+    metodo_inicio = Column(String, nullable=True)
+    latitud_fin = Column(Numeric(9, 6), nullable=True)
+    longitud_fin = Column(Numeric(9, 6), nullable=True)
+    precision_fin = Column(Numeric(10, 2), nullable=True)
+    distancia_fin = Column(Numeric(10, 2), nullable=True)
+    metodo_fin = Column(String, nullable=True)
+    duracion_segundos = Column(Integer, nullable=True)
+    estado_verificacion = Column(String, nullable=True, default="iniciada")
 
-    usuario = relationship("Usuario")
+    usuario = relationship("Usuario", foreign_keys=[usuario_id])
+    supervisor = relationship("Usuario", foreign_keys=[supervisor_id])
+    evidencia_usuario = relationship("Usuario", foreign_keys=[evidencia_usuario_id])
     lista = relationship("ListaActividad", back_populates="historial")
     company = relationship("Company")
 

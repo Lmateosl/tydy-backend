@@ -4,7 +4,7 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 from slowapi.middleware import SlowAPIMiddleware
-from app.routers import usuarios, empresas, locaciones, areas, categorias, actividades, lista_actividades, historial
+from app.routers import usuarios, empresas, locaciones, areas, categorias, actividades, lista_actividades, historial, dashboard
 from app.auth import routes as auth_routes
 from app.database import Base, engine
 from app import models
@@ -47,6 +47,7 @@ app.include_router(categorias.router)
 app.include_router(actividades.router)
 app.include_router(lista_actividades.router)
 app.include_router(historial.router)
+app.include_router(dashboard.router)
 
 if __name__ == "__main__":
     import uvicorn
