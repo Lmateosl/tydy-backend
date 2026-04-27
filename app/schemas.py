@@ -1,9 +1,14 @@
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel as PydanticBaseModel, ConfigDict, EmailStr, Field
 from typing import Optional
 from uuid import UUID
 from datetime import datetime
 from typing import List
 from typing import Literal
+from .datetime_utils import serialize_datetime_utc
+
+
+class BaseModel(PydanticBaseModel):
+    model_config = ConfigDict(json_encoders={datetime: serialize_datetime_utc})
 
 # Usuario
 # Este modelo representa la estructura de los datos del usuario

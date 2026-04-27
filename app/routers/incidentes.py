@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from .. import models, schemas
 from ..auth.dependencies import get_current_user
 from ..database import get_db
+from ..datetime_utils import utc_now_naive
 from ..image_utils import compress_image
 from ..models import Usuario
 
@@ -260,8 +261,8 @@ def crear_incidente(
         company_id=current_user.company_id,
         creado_por=current_user.id,
         estado="abierto",
-        creado_en=datetime.utcnow(),
-        actualizado_en=datetime.utcnow(),
+        creado_en=utc_now_naive(),
+        actualizado_en=utc_now_naive(),
     )
     db.add(nuevo_incidente)
     db.commit()
@@ -307,12 +308,12 @@ def actualizar_incidente(
         setattr(incidente, key, value)
 
     if incidente.estado == "resuelto" and incidente.resuelto_en is None:
-        incidente.resuelto_en = datetime.utcnow()
+        incidente.resuelto_en = utc_now_naive()
     if incidente.estado == "cerrado" and incidente.cerrado_en is None:
-        incidente.cerrado_en = datetime.utcnow()
+        incidente.cerrado_en = utc_now_naive()
 
     _sincronizar_estado_y_fechas(incidente)
-    incidente.actualizado_en = datetime.utcnow()
+    incidente.actualizado_en = utc_now_naive()
 
     db.commit()
     db.refresh(incidente)
@@ -370,9 +371,9 @@ async def resolver_incidente(
     incidente.estado = "resuelto"
     incidente.evidencia_resolucion = evidencia_resolucion
     incidente.foto_resolucion = foto_resolucion_url
-    incidente.resuelto_en = datetime.utcnow()
+    incidente.resuelto_en = utc_now_naive()
     incidente.cerrado_en = None
-    incidente.actualizado_en = datetime.utcnow()
+    incidente.actualizado_en = utc_now_naive()
 
     db.commit()
     db.refresh(incidente)
@@ -393,9 +394,9 @@ def cerrar_incidente(
 
     incidente.estado = "cerrado"
     if incidente.resuelto_en is None:
-        incidente.resuelto_en = datetime.utcnow()
-    incidente.cerrado_en = datetime.utcnow()
-    incidente.actualizado_en = datetime.utcnow()
+        incidente.resuelto_en = utc_now_naive()
+    incidente.cerrado_en = utc_now_naive()
+    incidente.actualizado_en = utc_now_naive()
 
     db.commit()
     db.refresh(incidente)

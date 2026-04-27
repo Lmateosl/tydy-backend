@@ -6,6 +6,7 @@ from uuid import UUID
 from datetime import datetime
 from fastapi.responses import StreamingResponse
 from app.database import get_db
+from app.datetime_utils import ensure_utc_datetime, to_utc_naive, utc_now_naive
 from app.models import ActividadUsuario, Usuario, ListaActividad, Area, Empresa, Locacion, Company
 from app.schemas import ActividadUsuarioCreate, ActividadUsuarioResponse, ActividadUsuarioUpdate, ActividadUsuarioResponseExtendido, ActividadFinalizar
 from app.auth.dependencies import get_current_user
@@ -102,7 +103,7 @@ def crear_actividad(
     
     nueva = ActividadUsuario(
         **actividad.dict(exclude_unset=True),
-        hora_inicio=datetime.utcnow(),
+        hora_inicio=utc_now_naive(),
         company_id=current_user.company_id,
         usuario_id=current_user.id,
         supervisor_id=current_user.supervisor_id,
@@ -125,6 +126,9 @@ def exportar_actividades(
     db: Session = Depends(get_db),
     current_user: Usuario = Security(get_current_user),
 ):
+    desde = to_utc_naive(desde)
+    hasta = to_utc_naive(hasta)
+
     query = db.query(ActividadUsuario).filter(
         ActividadUsuario.company_id == current_user.company_id
     ).options(
@@ -283,7 +287,7 @@ def finalizar_actividad(
 
     actividad.finalizada = True
     actividad.comentario = comentario or None
-    actividad.hora_fin = datetime.utcnow()
+    actividad.hora_fin = utc_now_naive()
     actividad.latitud_fin = latitud_fin
     actividad.longitud_fin = longitud_fin
     actividad.precision_fin = precision_fin
@@ -296,10 +300,15 @@ def finalizar_actividad(
     )
     actividad.distancia_fin = distancia_fin_calculada if distancia_fin_calculada is not None else distancia_fin
     actividad.metodo_fin = metodo_fin
-    actividad.duracion_segundos = int((actividad.hora_fin - actividad.hora_inicio).total_seconds())
+    actividad.duracion_segundos = int(
+        (
+            ensure_utc_datetime(actividad.hora_fin)
+            - ensure_utc_datetime(actividad.hora_inicio)
+        ).total_seconds()
+    )
     actividad.evidencia_obligatoria = evidencia_obligatoria
     actividad.evidencia_entregada = bool(ruta_imagen)
-    actividad.evidencia_subida_en = datetime.utcnow() if ruta_imagen else None
+    actividad.evidencia_subida_en = utc_now_naive() if ruta_imagen else None
     actividad.evidencia_usuario_id = current_user.id if ruta_imagen else None
     actividad.evidencia_tipo = imagen.content_type if imagen else None
     actividad.evidencia_nombre_archivo = imagen.filename if imagen else None
@@ -346,6 +355,9 @@ def listar_actividades(
     db: Session = Depends(get_db),
     current_user: Usuario = Security(get_current_user),
 ):
+    desde = to_utc_naive(desde)
+    hasta = to_utc_naive(hasta)
+
     query = db.query(ActividadUsuario).filter(
         ActividadUsuario.company_id == current_user.company_id
     ).options(

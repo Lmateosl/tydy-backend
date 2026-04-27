@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session, joinedload
 from .. import models, schemas
 from ..auth.dependencies import get_current_user
 from ..database import get_db
+from ..datetime_utils import to_utc_naive, utc_now
 from ..models import Usuario, ListaActividad, Area, Locacion, Empresa
 from ..services.incidentes_metrics import (
     ESTADOS_ABIERTOS,
@@ -30,7 +31,7 @@ def _validar_cliente(current_user: Usuario):
 
 
 def _rango_hoy_utc():
-    inicio = datetime.combine(datetime.utcnow().date(), time.min)
+    inicio = datetime.combine(utc_now().date(), time.min)
     fin = inicio + timedelta(days=1)
     return inicio, fin
 
@@ -91,6 +92,8 @@ def obtener_resumen_portal_cliente(
     current_user: Usuario = Security(get_current_user),
 ):
     _validar_cliente(current_user)
+    desde = to_utc_naive(desde)
+    hasta = to_utc_naive(hasta)
     empresa_ids, empresa_nombres = _obtener_empresas_asignadas(db, current_user)
     if not empresa_ids:
         return schemas.PortalClienteResumenResponse()
@@ -254,6 +257,8 @@ def obtener_riesgos_portal_cliente(
     current_user: Usuario = Security(get_current_user),
 ):
     _validar_cliente(current_user)
+    desde = to_utc_naive(desde)
+    hasta = to_utc_naive(hasta)
     empresa_ids, empresa_nombres = _obtener_empresas_asignadas(db, current_user)
     if not empresa_ids:
         return schemas.DashboardRiesgosResponse()
@@ -474,6 +479,8 @@ def obtener_historial_portal_cliente(
     current_user: Usuario = Security(get_current_user),
 ):
     _validar_cliente(current_user)
+    desde = to_utc_naive(desde)
+    hasta = to_utc_naive(hasta)
     empresa_ids, _ = _obtener_empresas_asignadas(db, current_user)
     if not empresa_ids:
         return []
@@ -523,6 +530,8 @@ def obtener_feedback_portal_cliente(
     current_user: Usuario = Security(get_current_user),
 ):
     _validar_cliente(current_user)
+    desde = to_utc_naive(desde)
+    hasta = to_utc_naive(hasta)
     empresa_ids, empresa_nombres = _obtener_empresas_asignadas(db, current_user)
     if not empresa_ids and not empresa_nombres:
         return []

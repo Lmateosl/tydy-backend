@@ -1,11 +1,16 @@
-from datetime import datetime
+import os
+from datetime import datetime, timedelta
 from decimal import Decimal
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from .. import models
+from ..datetime_utils import ensure_utc_datetime, utc_now, utc_now_naive
 
 
 ESTADOS_INCIDENTE_DUPLICADO = ("abierto", "asignado", "en_proceso", "resuelto")
+DEFAULT_THRESHOLD_MINUTOS_ACTIVIDAD_NO_FINALIZADA = 60
+DEFAULT_INTERVALO_JOB_ACTIVIDAD_NO_FINALIZADA_MINUTOS = 5
+UMBRAL_PRIORIDAD_ALTA_ACTIVIDAD_NO_FINALIZADA_HORAS = 3
 
 
 def _obtener_actor_automatico(db: Session, company_id):
@@ -81,8 +86,8 @@ def _crear_incidente_automatico(
         actividad_usuario_id=actividad_usuario_id,
         feedback_id=feedback_id,
         creado_por=actor.id,
-        creado_en=datetime.utcnow(),
-        actualizado_en=datetime.utcnow(),
+        creado_en=utc_now_naive(),
+        actualizado_en=utc_now_naive(),
     )
 
     db.add(incidente)
@@ -201,6 +206,77 @@ def _resolver_prioridad_incidente_geolocalizacion(
     return "media"
 
 
+def _obtener_threshold_actividad_no_finalizada() -> int:
+    valor = os.getenv(
+        "INCIDENTES_ACTIVIDAD_NO_FINALIZADA_THRESHOLD_MINUTOS",
+        str(DEFAULT_THRESHOLD_MINUTOS_ACTIVIDAD_NO_FINALIZADA),
+    )
+    try:
+        minutos = int(valor)
+        return minutos if minutos > 0 else DEFAULT_THRESHOLD_MINUTOS_ACTIVIDAD_NO_FINALIZADA
+    except (TypeError, ValueError):
+        return DEFAULT_THRESHOLD_MINUTOS_ACTIVIDAD_NO_FINALIZADA
+
+
+def obtener_intervalo_job_actividad_no_finalizada_segundos() -> int:
+    valor = os.getenv(
+        "INCIDENTES_ACTIVIDAD_NO_FINALIZADA_JOB_INTERVALO_MINUTOS",
+        str(DEFAULT_INTERVALO_JOB_ACTIVIDAD_NO_FINALIZADA_MINUTOS),
+    )
+    try:
+        minutos = int(valor)
+        minutos = minutos if minutos > 0 else DEFAULT_INTERVALO_JOB_ACTIVIDAD_NO_FINALIZADA_MINUTOS
+    except (TypeError, ValueError):
+        minutos = DEFAULT_INTERVALO_JOB_ACTIVIDAD_NO_FINALIZADA_MINUTOS
+
+    return minutos * 60
+
+
+def _resolver_prioridad_incidente_actividad_no_finalizada(tiempo_transcurrido: timedelta) -> str:
+    if tiempo_transcurrido > timedelta(hours=UMBRAL_PRIORIDAD_ALTA_ACTIVIDAD_NO_FINALIZADA_HORAS):
+        return "alta"
+
+    return "media"
+
+
+def _formatear_fecha_corta(dt: datetime | None) -> str:
+    if dt is None:
+        return "Sin inicio"
+    return dt.strftime("%I:%M %p").lstrip("0")
+
+
+def _formatear_duracion_legible(duracion: timedelta) -> str:
+    total_segundos = max(int(duracion.total_seconds()), 0)
+    horas, resto = divmod(total_segundos, 3600)
+    minutos, _ = divmod(resto, 60)
+
+    if horas > 0:
+        return f"{horas}h {minutos}m"
+    return f"{minutos}m"
+
+
+def _construir_descripcion_actividad_no_finalizada(
+    actividad: models.ActividadUsuario,
+    contexto: dict,
+    tiempo_transcurrido: timedelta,
+) -> str:
+    empleado = contexto["empleado_nombre"] or "Sin empleado"
+    if contexto["empleado_identificacion"]:
+        empleado = f"{empleado} ({contexto['empleado_identificacion']})"
+
+    partes = [
+        "Actividad iniciada pero no finalizada dentro del tiempo esperado.",
+        f"Lista: {contexto['lista_nombre'] or 'Sin lista'}.",
+        f"Locacion: {contexto['locacion_nombre'] or 'Sin locacion'}.",
+        f"Area: {contexto['area_nombre'] or 'Sin area'}.",
+        f"Empleado: {empleado}.",
+        f"Inicio: {_formatear_fecha_corta(actividad.hora_inicio)}.",
+        f"Tiempo sin finalizar: {_formatear_duracion_legible(tiempo_transcurrido)}.",
+    ]
+
+    return " ".join(partes)
+
+
 def crear_incidentes_automaticos_por_finalizacion(
     db: Session,
     actividad: models.ActividadUsuario,
@@ -281,6 +357,81 @@ def crear_incidentes_automaticos_por_finalizacion(
             "Error creando incidentes automaticos por finalizacion "
             f"para actividad_usuario_id={actividad.id}: {exc}"
         )
+        return []
+
+
+def crear_incidentes_actividades_no_finalizadas(db: Session):
+    try:
+        ahora = utc_now()
+        threshold_minutos = _obtener_threshold_actividad_no_finalizada()
+        fecha_limite = ahora.replace(tzinfo=None) - timedelta(minutes=threshold_minutos)
+
+        actividades = (
+            db.query(models.ActividadUsuario)
+            .filter(
+                models.ActividadUsuario.hora_inicio.isnot(None),
+                models.ActividadUsuario.hora_fin.is_(None),
+                models.ActividadUsuario.hora_inicio < fecha_limite,
+            )
+            .options(
+                joinedload(models.ActividadUsuario.usuario)
+                .joinedload(models.Usuario.area)
+                .joinedload(models.Area.locacion)
+                .joinedload(models.Locacion.empresa),
+                joinedload(models.ActividadUsuario.lista),
+            )
+            .all()
+        )
+
+        incidentes_creados = []
+        for actividad in actividades:
+            if _buscar_incidente_duplicado_por_actividad_y_tipo(
+                db,
+                actividad.id,
+                "actividad_no_finalizada",
+            ):
+                continue
+
+            contexto = _extraer_contexto_actividad(actividad)
+            company_id = contexto["company_id"]
+            if company_id is None:
+                print(
+                    "No se pudo crear incidente automatico tipo=actividad_no_finalizada "
+                    f"para actividad_usuario_id={actividad.id}: company_id no disponible"
+                )
+                continue
+
+            tiempo_transcurrido = ahora - ensure_utc_datetime(actividad.hora_inicio)
+            incidente = _crear_incidente_automatico(
+                db,
+                company_id=company_id,
+                tipo="actividad_no_finalizada",
+                prioridad=_resolver_prioridad_incidente_actividad_no_finalizada(tiempo_transcurrido),
+                descripcion=_construir_descripcion_actividad_no_finalizada(
+                    actividad,
+                    contexto,
+                    tiempo_transcurrido,
+                ),
+                empresa_id=contexto["empresa_id"],
+                locacion_id=contexto["locacion_id"],
+                area_id=contexto["area_id"],
+                empleado_id=contexto["empleado_id"],
+                supervisor_id=contexto["supervisor_id"],
+                actividad_usuario_id=actividad.id,
+                auto_commit=False,
+            )
+            if incidente is not None:
+                incidentes_creados.append(incidente)
+
+        if incidentes_creados:
+            db.commit()
+            for incidente in incidentes_creados:
+                db.refresh(incidente)
+
+        return incidentes_creados
+    except Exception as error:
+        db.rollback()
+        print("Error creando incidente actividad_no_finalizada:", error)
         return []
 
 

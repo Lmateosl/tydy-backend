@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from .. import models, schemas
 from ..auth.dependencies import get_current_user
 from ..database import get_db
+from ..datetime_utils import to_utc_naive, utc_now
 from ..models import Usuario
 from ..services.incidentes_metrics import (
     ESTADOS_ABIERTOS,
@@ -26,7 +27,7 @@ router = APIRouter(prefix="/dashboard/operativo", tags=["Dashboard"])
 
 
 def _rango_hoy_utc():
-    inicio = datetime.combine(datetime.utcnow().date(), time.min)
+    inicio = datetime.combine(utc_now().date(), time.min)
     fin = inicio + timedelta(days=1)
     return inicio, fin
 
@@ -158,6 +159,8 @@ def obtener_riesgos_operativos(
     current_user: Usuario = Security(get_current_user),
 ):
     _validar_permisos_dashboard(current_user)
+    desde = to_utc_naive(desde)
+    hasta = to_utc_naive(hasta)
 
     company_id = current_user.company_id
 
