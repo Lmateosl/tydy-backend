@@ -1,14 +1,15 @@
 import httpx
 import os
-from fastapi import APIRouter, HTTPException, Depends, Security
+from fastapi import APIRouter, HTTPException, Depends, Security, Query
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import Locacion
-from app.schemas import LocacionCreate, LocacionUpdate, LocacionOut
+from app.schemas import LocacionCreate, LocacionUpdate, LocacionOut, LocacionSupervisorAssign
 from ..auth.dependencies import get_current_user
 from ..models import Usuario
 from uuid import UUID
 from typing import List
+from .. import models
 
 router = APIRouter(prefix="/locaciones", tags=["Locaciones"])
 
@@ -65,6 +66,34 @@ async def obtener_direccion_por_coordenadas(latitud: float, longitud: float):
             "longitud": float(data.get("lon", longitud))
         }
 
+
+def _validar_admin(current_user: Usuario):
+    if current_user.rol != "admin":
+        raise HTTPException(status_code=403, detail="No tienes permisos")
+
+
+def _obtener_locacion_company_o_404(db: Session, locacion_id: UUID, company_id: UUID):
+    locacion = db.query(Locacion).filter(
+        Locacion.id == locacion_id,
+        Locacion.company_id == company_id
+    ).first()
+    if not locacion:
+        raise HTTPException(status_code=404, detail="Locación no encontrada")
+    return locacion
+
+
+def _obtener_supervisor_valido(db: Session, supervisor_id: UUID, company_id: UUID):
+    supervisor = db.query(models.Usuario).filter(
+        models.Usuario.id == supervisor_id
+    ).first()
+    if not supervisor:
+        raise HTTPException(status_code=404, detail="Supervisor no encontrado")
+    if supervisor.company_id != company_id:
+        raise HTTPException(status_code=400, detail="El supervisor no pertenece a la compañía")
+    if supervisor.rol != "supervisor":
+        raise HTTPException(status_code=400, detail="El usuario no tiene rol supervisor")
+    return supervisor
+
 @router.get("/coordenadas/")
 async def buscar_coordenadas(direccion: str):
     """
@@ -103,8 +132,7 @@ def crear_locacion(
     db: Session = Depends(get_db),
     current_user: Usuario = Security(get_current_user),
 ):
-    if current_user.rol != "admin":
-        raise HTTPException(status_code=403, detail="No tienes permisos")
+    _validar_admin(current_user)
     
     if data.latitud is not None and not (-90 <= data.latitud <= 90):
         raise HTTPException(status_code=400, detail="La latitud debe estar entre -90 y 90")
@@ -114,6 +142,9 @@ def crear_locacion(
 
     if data.radio_verificacion_metros is not None and data.radio_verificacion_metros <= 0:
         raise HTTPException(status_code=400, detail="El radio de verificación debe ser mayor a 0")
+
+    if data.supervisor_id is not None:
+        _obtener_supervisor_valido(db, data.supervisor_id, current_user.company_id)
     
     locacion = Locacion(**data.dict(), usuario_id=current_user.id, company_id=current_user.company_id)
     db.add(locacion)
@@ -124,13 +155,29 @@ def crear_locacion(
 # ✅ Obtener todas las locaciones creadas por el usuario autenticado
 @router.get("/", response_model=List[LocacionOut])
 def obtener_locaciones(
+    supervisor_id: UUID | None = Query(None),
     db: Session = Depends(get_db),
     current_user: Usuario = Security(get_current_user)
 ):
-    return db.query(Locacion).filter(
-        Locacion.usuario_id == current_user.id,
+    rol = (current_user.rol or "").lower()
+    query = db.query(Locacion).filter(
         Locacion.company_id == current_user.company_id
-    ).all()
+    )
+
+    if rol == "admin":
+        if supervisor_id is not None:
+            _obtener_supervisor_valido(db, supervisor_id, current_user.company_id)
+            query = query.filter(Locacion.supervisor_id == supervisor_id)
+    elif rol == "supervisor":
+        if supervisor_id is not None and supervisor_id != current_user.id:
+            raise HTTPException(status_code=403, detail="No tienes permisos para consultar locaciones de otro supervisor")
+        query = query.filter(Locacion.supervisor_id == current_user.id)
+    else:
+        if supervisor_id is not None:
+            raise HTTPException(status_code=403, detail="No tienes permisos para filtrar por supervisor")
+        query = query.filter(Locacion.usuario_id == current_user.id)
+
+    return query.all()
 
 # ✅ Obtener locación específica solo si fue creada por el usuario autenticado
 @router.get("/{locacion_id}", response_model=LocacionOut)
@@ -155,8 +202,7 @@ def actualizar_locacion(
     db: Session = Depends(get_db),
     current_user: Usuario = Security(get_current_user)
 ):
-    if current_user.rol != "admin":
-        raise HTTPException(status_code=403, detail="No tienes permisos")
+    _validar_admin(current_user)
     
     if data.latitud is not None and not (-90 <= data.latitud <= 90):
         raise HTTPException(status_code=400, detail="La latitud debe estar entre -90 y 90")
@@ -166,13 +212,11 @@ def actualizar_locacion(
 
     if data.radio_verificacion_metros is not None and data.radio_verificacion_metros <= 0:
         raise HTTPException(status_code=400, detail="El radio de verificación debe ser mayor a 0")
+
+    if data.supervisor_id is not None:
+        _obtener_supervisor_valido(db, data.supervisor_id, current_user.company_id)
     
-    locacion = db.query(Locacion).filter(
-        Locacion.id == locacion_id,
-        Locacion.company_id == current_user.company_id
-    ).first()
-    if not locacion:
-        raise HTTPException(status_code=404, detail="Locación no encontrada o sin permiso")
+    locacion = _obtener_locacion_company_o_404(db, locacion_id, current_user.company_id)
     for key, value in data.dict(exclude_unset=True).items():
         setattr(locacion, key, value)
     db.commit()
@@ -186,18 +230,44 @@ def eliminar_locacion(
     db: Session = Depends(get_db),
     current_user: Usuario = Security(get_current_user)
 ):
-    if current_user.rol != "admin":
-        raise HTTPException(status_code=403, detail="No tienes permisos")
+    _validar_admin(current_user)
     
-    locacion = db.query(Locacion).filter(
-        Locacion.id == locacion_id,
-        Locacion.company_id == current_user.company_id
-    ).first()
-    if not locacion:
-        raise HTTPException(status_code=404, detail="Locación no encontrada o sin permiso")
+    locacion = _obtener_locacion_company_o_404(db, locacion_id, current_user.company_id)
     db.delete(locacion)
     db.commit()
     return {"mensaje": "Locación eliminada"}
+
+
+@router.put("/{locacion_id}/supervisor", response_model=LocacionOut)
+def asignar_supervisor_locacion(
+    locacion_id: UUID,
+    payload: LocacionSupervisorAssign,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Security(get_current_user),
+):
+    _validar_admin(current_user)
+    locacion = _obtener_locacion_company_o_404(db, locacion_id, current_user.company_id)
+    supervisor = _obtener_supervisor_valido(db, payload.supervisor_id, current_user.company_id)
+
+    locacion.supervisor_id = supervisor.id
+    db.commit()
+    db.refresh(locacion)
+    return locacion
+
+
+@router.delete("/{locacion_id}/supervisor", response_model=LocacionOut)
+def quitar_supervisor_locacion(
+    locacion_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Security(get_current_user),
+):
+    _validar_admin(current_user)
+    locacion = _obtener_locacion_company_o_404(db, locacion_id, current_user.company_id)
+
+    locacion.supervisor_id = None
+    db.commit()
+    db.refresh(locacion)
+    return locacion
 
 # ✅ Obtener locaciones de una empresa, filtradas por el usuario autenticado
 @router.get("/empresa/{empresa_id}", response_model=List[LocacionOut])

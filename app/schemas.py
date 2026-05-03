@@ -137,6 +137,7 @@ class LocacionBase(BaseModel):
     latitud: Optional[float] = None
     longitud: Optional[float] = None
     radio_verificacion_metros: Optional[int] = 1000
+    supervisor_id: Optional[UUID] = None
 
 class LocacionCreate(LocacionBase):
     empresa_id: UUID
@@ -147,6 +148,7 @@ class LocacionUpdate(BaseModel):
     latitud: Optional[float] = None
     longitud: Optional[float] = None
     radio_verificacion_metros: Optional[int] = None
+    supervisor_id: Optional[UUID] = None
 
 class LocacionOut(LocacionBase):
     id: UUID
@@ -162,6 +164,14 @@ class LocacionOut(LocacionBase):
 
     class Config:
         from_attributes = True
+
+
+class LocacionSupervisorAssign(BaseModel):
+    supervisor_id: UUID
+
+
+class EmpresaSupervisorAssign(BaseModel):
+    supervisor_id: UUID
 
 # Area
 # Este modelo representa la estructura de los datos del área
@@ -332,10 +342,12 @@ class AreaMini(BaseModel):
 # -------------------------
 class FeedbackQRCreate(BaseModel):
     empresa_id: UUID
+    locacion_id: Optional[UUID] = None
     contexto: Optional[str] = None
 
 class FeedbackQRUpdate(BaseModel):
     empresa_id: Optional[UUID] = None
+    locacion_id: Optional[UUID] = None
     contexto: Optional[str] = None
     nombre: Optional[str] = None
     direccion: Optional[str] = None
@@ -344,6 +356,7 @@ class FeedbackQRResponse(BaseModel):
     id: UUID
     url: str
     empresa_id: Optional[UUID] = None
+    locacion_id: Optional[UUID] = None
     contexto: Optional[str] = None
     nombre: str
     direccion: Optional[str] = None
@@ -455,6 +468,7 @@ class FeedbackCreate(BaseModel):
     empresa: Optional[str] = None
     direccion: Optional[str] = None
     empresa_id: Optional[UUID] = None
+    locacion_id: Optional[UUID] = None
     contexto: Optional[str] = None
     calificacion: float
     company_id: UUID
@@ -467,6 +481,7 @@ class FeedbackUpdate(BaseModel):
     empresa: Optional[str] = None
     direccion: Optional[str] = None
     empresa_id: Optional[UUID] = None
+    locacion_id: Optional[UUID] = None
     contexto: Optional[str] = None
     calificacion: Optional[float] = None
     comentario: Optional[str] = None
@@ -479,6 +494,7 @@ class FeedbackResponse(BaseModel):
     empresa: Optional[str] = None
     direccion: Optional[str] = None
     empresa_id: Optional[UUID] = None
+    locacion_id: Optional[UUID] = None
     contexto: Optional[str] = None
     calificacion: float
     comentario: Optional[str] = None
@@ -525,6 +541,10 @@ class IncidenteResolver(BaseModel):
     evidencia_resolucion: Optional[str] = None
 
 
+class IncidenteComentarioCreate(BaseModel):
+    mensaje: Optional[str] = Field(default=None, max_length=2000)
+
+
 class IncidenteCerrar(BaseModel):
     pass
 
@@ -549,12 +569,44 @@ class IncidenteResponse(BaseModel):
     foto_resolucion: Optional[str] = None
     creado_en: datetime
     actualizado_en: datetime
+    ultimo_evento_en: Optional[datetime] = None
     resuelto_en: Optional[datetime] = None
     cerrado_en: Optional[datetime] = None
     creado_por: UUID
 
     class Config:
         from_attributes = True
+
+
+class IncidenteEventoActorResponse(BaseModel):
+    id: Optional[UUID] = None
+    nombre: Optional[str] = None
+    rol: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+
+class IncidenteEventoResponse(BaseModel):
+    id: UUID
+    incidente_id: UUID
+    tipo_evento: str
+    actor_id: Optional[UUID] = None
+    actor_rol: Optional[str] = None
+    actor: Optional[IncidenteEventoActorResponse] = None
+    mensaje: Optional[str] = None
+    foto_url: Optional[str] = None
+    metadata: dict = Field(default_factory=dict, alias="metadata_json")
+    creado_en: datetime
+
+    class Config:
+        from_attributes = True
+        populate_by_name = True
+
+
+class IncidenteTimelineResponse(BaseModel):
+    items: list[IncidenteEventoResponse] = Field(default_factory=list)
+    total: int = 0
 
 
 class DashboardRiesgoLocacionItem(BaseModel):

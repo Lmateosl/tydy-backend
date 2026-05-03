@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from .. import models
 from ..datetime_utils import ensure_utc_datetime, utc_now, utc_now_naive
+from .incidente_eventos import registrar_evento_creado
 
 
 ESTADOS_INCIDENTE_DUPLICADO = ("abierto", "asignado", "en_proceso", "resuelto")
@@ -91,6 +92,13 @@ def _crear_incidente_automatico(
     )
 
     db.add(incidente)
+    db.flush()
+    registrar_evento_creado(
+        db,
+        incidente=incidente,
+        actor=actor,
+        origen="automatico",
+    )
     if auto_commit:
         db.commit()
         db.refresh(incidente)
@@ -116,7 +124,7 @@ def _extraer_contexto_actividad(actividad: models.ActividadUsuario, company_id_f
         "empleado_id": actividad.usuario_id,
         "empleado_nombre": usuario.nombre if usuario and usuario.nombre else None,
         "empleado_identificacion": usuario.identificacion if usuario and usuario.identificacion else None,
-        "supervisor_id": actividad.supervisor_id,
+        "supervisor_id": locacion.supervisor_id if locacion and locacion.supervisor_id else None,
         "lista_nombre": actividad.lista.nombre if actividad.lista and actividad.lista.nombre else None,
         "radio_verificacion_metros": (
             float(locacion.radio_verificacion_metros)
@@ -449,6 +457,17 @@ def crear_incidente_automatico_por_feedback_negativo(
         return None
 
     prioridad = "alta" if Decimal(str(feedback.calificacion)) <= Decimal("1") else "media"
+    locacion_id = None
+    supervisor_id = None
+
+    if feedback.locacion_id is not None:
+        locacion = db.query(models.Locacion).filter(
+            models.Locacion.id == feedback.locacion_id,
+            models.Locacion.company_id == feedback.company_id,
+        ).first()
+        if locacion is not None:
+            locacion_id = locacion.id
+            supervisor_id = locacion.supervisor_id
 
     return _crear_incidente_automatico(
         db,
@@ -457,5 +476,7 @@ def crear_incidente_automatico_por_feedback_negativo(
         prioridad=prioridad,
         descripcion=_construir_descripcion_feedback_negativo(feedback),
         empresa_id=feedback.empresa_id,
+        locacion_id=locacion_id,
+        supervisor_id=supervisor_id,
         feedback_id=feedback.id,
     )

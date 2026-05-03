@@ -10,6 +10,24 @@ import cloudinary.uploader
 
 router = APIRouter(prefix="/empresas", tags=["Empresas"])
 
+
+def _validar_admin(current_user: Usuario):
+    if current_user.rol != "admin":
+        raise HTTPException(status_code=403, detail="No tienes permisos")
+
+
+def _obtener_supervisor_valido(db: Session, supervisor_id: UUID, company_id: UUID):
+    supervisor = db.query(models.Usuario).filter(
+        models.Usuario.id == supervisor_id
+    ).first()
+    if not supervisor:
+        raise HTTPException(status_code=404, detail="Supervisor no encontrado")
+    if supervisor.company_id != company_id:
+        raise HTTPException(status_code=400, detail="El supervisor no pertenece a la compañía")
+    if supervisor.rol != "supervisor":
+        raise HTTPException(status_code=400, detail="El usuario no tiene rol supervisor")
+    return supervisor
+
 # Crear empresa
 @router.post("/", response_model=schemas.EmpresaResponse)
 def crear_empresa(
@@ -18,8 +36,7 @@ def crear_empresa(
     db: Session = Depends(get_db),
     current_user: Usuario = Security(get_current_user),
 ):
-    if current_user.rol != "admin":
-        raise HTTPException(status_code=403, detail="No tienes permisos")
+    _validar_admin(current_user)
     
     empresa_existente = db.query(models.Empresa).filter(
         models.Empresa.nombre == nombre,
@@ -81,8 +98,7 @@ def editar_empresa(
     db: Session = Depends(get_db),
     current_user: Usuario = Security(get_current_user),
 ):
-    if current_user.rol != "admin":
-        raise HTTPException(status_code=403, detail="No tienes permisos")
+    _validar_admin(current_user)
 
     empresa = db.query(models.Empresa).filter(
         models.Empresa.id == empresa_id,
@@ -113,8 +129,7 @@ def eliminar_empresa(
     db: Session = Depends(get_db),
     current_user: Usuario = Security(get_current_user),
 ):
-    if current_user.rol != "admin":
-        raise HTTPException(status_code=403, detail="No tienes permisos")
+    _validar_admin(current_user)
     
     empresa = db.query(models.Empresa).filter(
         models.Empresa.id == empresa_id,
@@ -126,3 +141,39 @@ def eliminar_empresa(
     db.delete(empresa)
     db.commit()
     return {"detalle": "Empresa eliminada correctamente"}
+
+
+@router.put("/{empresa_id}/supervisor")
+def aplicar_supervisor_empresa(
+    empresa_id: UUID = Path(...),
+    payload: schemas.EmpresaSupervisorAssign = ...,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Security(get_current_user),
+):
+    _validar_admin(current_user)
+
+    empresa = db.query(models.Empresa).filter(
+        models.Empresa.id == empresa_id,
+        models.Empresa.company_id == current_user.company_id
+    ).first()
+    if not empresa:
+        raise HTTPException(status_code=404, detail="Empresa no encontrada")
+
+    supervisor = _obtener_supervisor_valido(db, payload.supervisor_id, current_user.company_id)
+
+    locaciones_actualizadas = db.query(models.Locacion).filter(
+        models.Locacion.empresa_id == empresa.id,
+        models.Locacion.company_id == current_user.company_id
+    ).update(
+        {models.Locacion.supervisor_id: supervisor.id},
+        synchronize_session=False
+    )
+
+    db.commit()
+
+    return {
+        "detail": "Supervisor aplicado correctamente",
+        "empresa_id": empresa.id,
+        "supervisor_id": supervisor.id,
+        "locaciones_actualizadas": locaciones_actualizadas,
+    }

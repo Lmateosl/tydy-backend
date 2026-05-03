@@ -44,6 +44,29 @@ PUBLIC_FRONTEND_FEEDBACK_URL = os.getenv("VITE_PUBLIC_FRONTEND_FEEDBACK_URL", "h
 
 router = APIRouter(prefix="/listas_actividades", tags=["Listas de Actividades"])
 
+
+def _validar_locacion_feedback_qr(
+    db: Session,
+    *,
+    company_id: UUID,
+    empresa_id: UUID | None,
+    locacion_id: UUID | None,
+):
+    if locacion_id is None:
+        return None
+
+    locacion = db.query(models.Locacion).filter(
+        models.Locacion.id == locacion_id,
+        models.Locacion.company_id == company_id,
+    ).first()
+    if not locacion:
+        raise HTTPException(status_code=400, detail="locacion_id no pertenece a la compañía")
+
+    if empresa_id is not None and locacion.empresa_id != empresa_id:
+        raise HTTPException(status_code=400, detail="La locación no pertenece a la empresa indicada")
+
+    return locacion
+
 # Crear lista
 @router.post("/", response_model=schemas.ListaActividadResponse)
 def crear_lista(
@@ -175,6 +198,13 @@ def crear_feedback_list(
     if not empresa:
         raise HTTPException(status_code=404, detail="Empresa no encontrada")
 
+    locacion = _validar_locacion_feedback_qr(
+        db,
+        company_id=current_user.company_id,
+        empresa_id=empresa.id,
+        locacion_id=payload.locacion_id,
+    )
+
     nombre_legacy = empresa.nombre
     contexto_legacy = payload.contexto or ""
 
@@ -197,6 +227,7 @@ def crear_feedback_list(
         contexto=payload.contexto,
         nombre=nombre_legacy,
         direccion=contexto_legacy,
+        locacion_id=locacion.id if locacion else None,
         company_id=current_user.company_id,
         usuario_id=current_user.id,
     )
@@ -259,6 +290,22 @@ def actualizar_feedback_qr(
             models.Empresa.company_id == current_user.company_id,
         ).first()
 
+    empresa_id_resuelta = empresa.id if empresa else feedback.empresa_id
+    if payload.locacion_id is not None:
+        locacion = _validar_locacion_feedback_qr(
+            db,
+            company_id=current_user.company_id,
+            empresa_id=empresa_id_resuelta,
+            locacion_id=payload.locacion_id,
+        )
+    else:
+        locacion = _validar_locacion_feedback_qr(
+            db,
+            company_id=current_user.company_id,
+            empresa_id=empresa_id_resuelta,
+            locacion_id=feedback.locacion_id,
+        ) if feedback.locacion_id is not None else None
+
     nuevo_nombre = payload.nombre if payload.nombre is not None else (empresa.nombre if empresa else feedback.nombre)
     nuevo_contexto = payload.contexto if payload.contexto is not None else feedback.contexto
     nueva_direccion = payload.direccion if payload.direccion is not None else (
@@ -285,6 +332,10 @@ def actualizar_feedback_qr(
         feedback.empresa_id = empresa.id
     elif payload.empresa_id is not None:
         feedback.empresa_id = None
+    if payload.locacion_id is not None:
+        feedback.locacion_id = locacion.id if locacion else None
+    elif locacion is not None:
+        feedback.locacion_id = locacion.id
     feedback.contexto = nuevo_contexto
     feedback.nombre = nuevo_nombre
     feedback.direccion = nueva_direccion
@@ -385,12 +436,14 @@ async def crear_feedback_user(
     contexto_normalizado = contexto if contexto is not None else direccion
     contexto_snapshot = contexto_normalizado or ""
     usuario_id = feedback_qr.usuario_id if feedback_qr else None
+    locacion_id = feedback_qr.locacion_id if feedback_qr else None
 
     nuevo_feedback = models.Feedback(
         nombre=nombre,
         empresa=empresa_snapshot,
         direccion=contexto_snapshot,
         empresa_id=empresa_model.id if empresa_model else None,
+        locacion_id=locacion_id,
         contexto=contexto_normalizado,
         calificacion=calificacion,
         comentario=comentario,
