@@ -61,6 +61,7 @@ def _crear_incidente_automatico(
     area_id=None,
     empleado_id=None,
     supervisor_id=None,
+    asignado_a_id=None,
     actividad_usuario_id=None,
     feedback_id=None,
     auto_commit: bool = True,
@@ -85,6 +86,7 @@ def _crear_incidente_automatico(
         area_id=area_id,
         empleado_id=empleado_id,
         supervisor_id=supervisor_id,
+        asignado_a_id=asignado_a_id,
         actividad_usuario_id=actividad_usuario_id,
         feedback_id=feedback_id,
         creado_por=actor.id,
@@ -465,6 +467,8 @@ def crear_incidente_automatico_por_feedback_negativo(
 
     prioridad = "alta" if Decimal(str(feedback.calificacion)) <= Decimal("1") else "media"
     locacion_id = None
+    area_id = feedback.area_id
+    empleado_id = None
     supervisor_id = None
 
     if feedback.locacion_id is not None:
@@ -476,6 +480,15 @@ def crear_incidente_automatico_por_feedback_negativo(
             locacion_id = locacion.id
             supervisor_id = locacion.supervisor_id
 
+    if area_id is not None:
+        empleados = db.query(models.Usuario).filter(
+            models.Usuario.company_id == feedback.company_id,
+            models.Usuario.rol == "empleado",
+            models.Usuario.area_id == area_id,
+        ).order_by(models.Usuario.creado_en.asc().nullslast(), models.Usuario.id.asc()).all()
+        if len(empleados) == 1:
+            empleado_id = empleados[0].id
+
     return _crear_incidente_automatico(
         db,
         company_id=feedback.company_id,
@@ -484,6 +497,9 @@ def crear_incidente_automatico_por_feedback_negativo(
         descripcion=_construir_descripcion_feedback_negativo(feedback),
         empresa_id=feedback.empresa_id,
         locacion_id=locacion_id,
+        area_id=area_id,
+        empleado_id=empleado_id,
         supervisor_id=supervisor_id,
+        asignado_a_id=empleado_id,
         feedback_id=feedback.id,
     )

@@ -343,11 +343,13 @@ class AreaMini(BaseModel):
 class FeedbackQRCreate(BaseModel):
     empresa_id: UUID
     locacion_id: Optional[UUID] = None
+    area_id: Optional[UUID] = None
     contexto: Optional[str] = None
 
 class FeedbackQRUpdate(BaseModel):
     empresa_id: Optional[UUID] = None
     locacion_id: Optional[UUID] = None
+    area_id: Optional[UUID] = None
     contexto: Optional[str] = None
     nombre: Optional[str] = None
     direccion: Optional[str] = None
@@ -357,6 +359,7 @@ class FeedbackQRResponse(BaseModel):
     url: str
     empresa_id: Optional[UUID] = None
     locacion_id: Optional[UUID] = None
+    area_id: Optional[UUID] = None
     contexto: Optional[str] = None
     nombre: str
     direccion: Optional[str] = None
@@ -469,6 +472,7 @@ class FeedbackCreate(BaseModel):
     direccion: Optional[str] = None
     empresa_id: Optional[UUID] = None
     locacion_id: Optional[UUID] = None
+    area_id: Optional[UUID] = None
     contexto: Optional[str] = None
     calificacion: float
     company_id: UUID
@@ -482,6 +486,7 @@ class FeedbackUpdate(BaseModel):
     direccion: Optional[str] = None
     empresa_id: Optional[UUID] = None
     locacion_id: Optional[UUID] = None
+    area_id: Optional[UUID] = None
     contexto: Optional[str] = None
     calificacion: Optional[float] = None
     comentario: Optional[str] = None
@@ -495,6 +500,7 @@ class FeedbackResponse(BaseModel):
     direccion: Optional[str] = None
     empresa_id: Optional[UUID] = None
     locacion_id: Optional[UUID] = None
+    area_id: Optional[UUID] = None
     contexto: Optional[str] = None
     calificacion: float
     comentario: Optional[str] = None
@@ -667,6 +673,12 @@ class AlertaManualCreate(BaseModel):
     empresa_id: Optional[UUID] = None
     locacion_id: Optional[UUID] = None
     user_ids: list[UUID] = Field(default_factory=list)
+
+
+class AlertaManualCreateResponse(BaseModel):
+    detail: str
+    notification_id: UUID
+    destinatarios: int
 
 
 class DashboardRiesgoLocacionItem(BaseModel):

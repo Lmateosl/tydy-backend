@@ -6,7 +6,7 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 from slowapi.middleware import SlowAPIMiddleware
-from app.routers import usuarios, empresas, locaciones, areas, categorias, actividades, lista_actividades, historial, dashboard, portal_cliente, incidentes, notificaciones
+from app.routers import usuarios, empresas, locaciones, areas, categorias, actividades, lista_actividades, historial, dashboard, portal_cliente, incidentes, notificaciones, alertas_manuales
 from app.auth import routes as auth_routes
 from app.database import Base, SessionLocal, engine
 from app import models
@@ -57,6 +57,7 @@ app.include_router(dashboard.router)
 app.include_router(portal_cliente.router)
 app.include_router(incidentes.router)
 app.include_router(notificaciones.router)
+app.include_router(alertas_manuales.router)
 
 
 async def _job_periodico_incidentes_actividades_no_finalizadas():

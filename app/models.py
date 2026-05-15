@@ -269,6 +269,7 @@ class FeedbackQR(Base):
     direccion = Column(Text, nullable=False)
     empresa_id = Column(UUID(as_uuid=True), ForeignKey("empresas.id"), nullable=True)
     locacion_id = Column(UUID(as_uuid=True), ForeignKey("locaciones.id"), nullable=True)
+    area_id = Column(UUID(as_uuid=True), ForeignKey("areas.id"), nullable=True)
     contexto = Column(Text, nullable=True)
     creado_en = Column(DateTime, default=datetime.utcnow)
     company_id = Column(UUID(as_uuid=True), ForeignKey("companies.id"), nullable=True)
@@ -279,6 +280,7 @@ class FeedbackQR(Base):
     usuario = relationship("Usuario", back_populates="feedbacks_qr", foreign_keys=[usuario_id])
     empresa_rel = relationship("Empresa", foreign_keys=[empresa_id])
     locacion = relationship("Locacion", foreign_keys=[locacion_id])
+    area = relationship("Area", foreign_keys=[area_id])
 
 class Feedback(Base):
     __tablename__ = "feedback"
@@ -289,6 +291,7 @@ class Feedback(Base):
     direccion = Column(Text, nullable=False)
     empresa_id = Column(UUID(as_uuid=True), ForeignKey("empresas.id"), nullable=True)
     locacion_id = Column(UUID(as_uuid=True), ForeignKey("locaciones.id"), nullable=True)
+    area_id = Column(UUID(as_uuid=True), ForeignKey("areas.id"), nullable=True)
     contexto = Column(Text, nullable=True)
     calificacion = Column(Numeric(2, 1), nullable=False)
     comentario = Column(Text, nullable=True)
@@ -302,6 +305,7 @@ class Feedback(Base):
     usuario = relationship("Usuario", back_populates="feedbacks", foreign_keys=[usuario_id])
     empresa_rel = relationship("Empresa", foreign_keys=[empresa_id])
     locacion = relationship("Locacion", foreign_keys=[locacion_id])
+    area = relationship("Area", foreign_keys=[area_id])
 
 
 class Incidente(Base):

@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from .. import models, schemas
 from ..auth.dependencies import get_current_user
 from ..database import get_db
-from ..datetime_utils import utc_now_naive
+from ..datetime_utils import to_utc_naive, utc_now_naive
 from ..image_utils import compress_image
 from ..models import Usuario
 from ..services.incidentes_context import resolve_incidente_context
@@ -227,6 +227,8 @@ def listar_incidentes(
     current_user: Usuario = Security(get_current_user),
 ):
     _validar_permisos_lectura(current_user)
+    desde = to_utc_naive(desde)
+    hasta = to_utc_naive(hasta)
 
     query = apply_incidente_visibility_scope(
         db.query(models.Incidente),

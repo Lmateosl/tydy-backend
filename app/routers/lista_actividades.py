@@ -67,6 +67,29 @@ def _validar_locacion_feedback_qr(
 
     return locacion
 
+
+def _validar_area_feedback_qr(
+    db: Session,
+    *,
+    company_id: UUID,
+    locacion_id: UUID | None,
+    area_id: UUID | None,
+):
+    if area_id is None:
+        return None
+
+    area = db.query(models.Area).filter(
+        models.Area.id == area_id,
+        models.Area.company_id == company_id,
+    ).first()
+    if not area:
+        raise HTTPException(status_code=400, detail="area_id no pertenece a la compañía")
+
+    if locacion_id is not None and area.locacion_id != locacion_id:
+        raise HTTPException(status_code=400, detail="El área no pertenece a la locación indicada")
+
+    return area
+
 # Crear lista
 @router.post("/", response_model=schemas.ListaActividadResponse)
 def crear_lista(
@@ -204,6 +227,12 @@ def crear_feedback_list(
         empresa_id=empresa.id,
         locacion_id=payload.locacion_id,
     )
+    area = _validar_area_feedback_qr(
+        db,
+        company_id=current_user.company_id,
+        locacion_id=locacion.id if locacion else None,
+        area_id=payload.area_id,
+    )
 
     nombre_legacy = empresa.nombre
     contexto_legacy = payload.contexto or ""
@@ -215,7 +244,17 @@ def crear_feedback_list(
     nombre_encoded = quote(nombre_legacy, safe="")
     direccion_encoded = quote(contexto_legacy, safe="")
     company_id_encoded = quote(str(current_user.company_id) if current_user.company_id else "", safe="")
-    full_url = f"{base_url}?empresa_id={quote(str(empresa.id), safe='')}&contexto={direccion_encoded}&company_id={company_id_encoded}&empresa={nombre_encoded}"
+    query = {
+        "empresa_id": str(empresa.id),
+        "contexto": contexto_legacy,
+        "company_id": str(current_user.company_id) if current_user.company_id else "",
+        "empresa": nombre_legacy,
+    }
+    if locacion is not None:
+        query["locacion_id"] = str(locacion.id)
+    if area is not None:
+        query["area_id"] = str(area.id)
+    full_url = f"{base_url}?{urlencode(query)}"
 
     # 2) Generar QR y subirlo a Cloudinary (carpeta dedicada)
     qr_url = generar_qr_cloudinary_feedback(full_url)
@@ -228,6 +267,7 @@ def crear_feedback_list(
         nombre=nombre_legacy,
         direccion=contexto_legacy,
         locacion_id=locacion.id if locacion else None,
+        area_id=area.id if area else None,
         company_id=current_user.company_id,
         usuario_id=current_user.id,
     )
@@ -241,6 +281,8 @@ def crear_feedback_list(
         "id": str(feedback.id),
         "url": feedback.url,
         "empresa_id": feedback.empresa_id,
+        "locacion_id": feedback.locacion_id,
+        "area_id": feedback.area_id,
         "contexto": feedback.contexto,
         "nombre": feedback.nombre,
         "direccion": feedback.direccion
@@ -306,6 +348,13 @@ def actualizar_feedback_qr(
             locacion_id=feedback.locacion_id,
         ) if feedback.locacion_id is not None else None
 
+    area_obj = _validar_area_feedback_qr(
+        db,
+        company_id=current_user.company_id,
+        locacion_id=locacion.id if locacion else feedback.locacion_id,
+        area_id=payload.area_id if payload.area_id is not None else feedback.area_id,
+    )
+
     nuevo_nombre = payload.nombre if payload.nombre is not None else (empresa.nombre if empresa else feedback.nombre)
     nuevo_contexto = payload.contexto if payload.contexto is not None else feedback.contexto
     nueva_direccion = payload.direccion if payload.direccion is not None else (
@@ -318,9 +367,20 @@ def actualizar_feedback_qr(
     nombre_encoded = quote(nuevo_nombre or "", safe="")
     direccion_encoded = quote(nueva_direccion or "", safe="")
     company_id_encoded = quote(str(feedback.company_id) or "", safe="")
-    empresa_id_encoded = quote(str(feedback.empresa_id), safe="") if feedback.empresa_id else ""
-    if empresa_id_encoded:
-        full_url = f"{base_url}?empresa_id={empresa_id_encoded}&contexto={direccion_encoded}&company_id={company_id_encoded}&empresa={nombre_encoded}"
+    if feedback.empresa_id:
+        query = {
+            "empresa_id": str(empresa_id_resuelta or feedback.empresa_id),
+            "contexto": nueva_direccion or "",
+            "company_id": str(feedback.company_id) or "",
+            "empresa": nuevo_nombre or "",
+        }
+        locacion_qr_id = locacion.id if locacion else feedback.locacion_id
+        area_qr_id = area_obj.id if area_obj else feedback.area_id
+        if locacion_qr_id:
+            query["locacion_id"] = str(locacion_qr_id)
+        if area_qr_id:
+            query["area_id"] = str(area_qr_id)
+        full_url = f"{base_url}?{urlencode(query)}"
     else:
         full_url = f"{base_url}/{nombre_encoded}/{direccion_encoded}/{company_id_encoded}"
 
@@ -336,6 +396,10 @@ def actualizar_feedback_qr(
         feedback.locacion_id = locacion.id if locacion else None
     elif locacion is not None:
         feedback.locacion_id = locacion.id
+    if payload.area_id is not None:
+        feedback.area_id = area_obj.id if area_obj else None
+    elif area_obj is not None:
+        feedback.area_id = area_obj.id
     feedback.contexto = nuevo_contexto
     feedback.nombre = nuevo_nombre
     feedback.direccion = nueva_direccion
@@ -377,6 +441,8 @@ async def crear_feedback_user(
     direccion: str | None = Form(None),
     empresa_id: UUID | None = Form(None),
     contexto: str | None = Form(None),
+    locacion_id: UUID | None = Form(None),
+    area_id: UUID | None = Form(None),
     calificacion: float = Form(...),
     company_id: UUID = Form(...),
     nombre: str | None = Form(None),
@@ -436,14 +502,30 @@ async def crear_feedback_user(
     contexto_normalizado = contexto if contexto is not None else direccion
     contexto_snapshot = contexto_normalizado or ""
     usuario_id = feedback_qr.usuario_id if feedback_qr else None
-    locacion_id = feedback_qr.locacion_id if feedback_qr else None
+    locacion_id_resuelta = locacion_id or (feedback_qr.locacion_id if feedback_qr else None)
+    area_id_resuelta = area_id or (feedback_qr.area_id if feedback_qr else None)
+
+    if locacion_id_resuelta is not None:
+        _validar_locacion_feedback_qr(
+            db,
+            company_id=company_id,
+            empresa_id=empresa_model.id if empresa_model else None,
+            locacion_id=locacion_id_resuelta,
+        )
+    _validar_area_feedback_qr(
+        db,
+        company_id=company_id,
+        locacion_id=locacion_id_resuelta,
+        area_id=area_id_resuelta,
+    )
 
     nuevo_feedback = models.Feedback(
         nombre=nombre,
         empresa=empresa_snapshot,
         direccion=contexto_snapshot,
         empresa_id=empresa_model.id if empresa_model else None,
-        locacion_id=locacion_id,
+        locacion_id=locacion_id_resuelta,
+        area_id=area_id_resuelta,
         contexto=contexto_normalizado,
         calificacion=calificacion,
         comentario=comentario,
@@ -485,6 +567,8 @@ async def actualizar_feedback_user(
     direccion: str | None = Form(None),
     empresa_id: UUID | None = Form(None),
     contexto: str | None = Form(None),
+    locacion_id: UUID | None = Form(None),
+    area_id: UUID | None = Form(None),
     calificacion: float | None = Form(None),
     nombre: str | None = Form(None),
     comentario: str | None = Form(None),
@@ -517,12 +601,29 @@ async def actualizar_feedback_user(
     if empresa_model is not None:
         feedback.empresa_id = empresa_model.id
         feedback.empresa = empresa_model.nombre
+    empresa_id_resuelta = empresa_model.id if empresa_model is not None else feedback.empresa_id
     if direccion is not None:
         feedback.direccion = direccion
     if contexto is not None:
         feedback.contexto = contexto
         if direccion is None:
             feedback.direccion = contexto
+    if locacion_id is not None:
+        locacion = _validar_locacion_feedback_qr(
+            db,
+            company_id=current_user.company_id,
+            empresa_id=empresa_id_resuelta,
+            locacion_id=locacion_id,
+        )
+        feedback.locacion_id = locacion.id if locacion else None
+    if area_id is not None:
+        area_obj = _validar_area_feedback_qr(
+            db,
+            company_id=current_user.company_id,
+            locacion_id=feedback.locacion_id,
+            area_id=area_id,
+        )
+        feedback.area_id = area_obj.id if area_obj else None
     if calificacion is not None:
         feedback.calificacion = calificacion
     if nombre is not None:
