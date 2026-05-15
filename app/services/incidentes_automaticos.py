@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session, joinedload
 from .. import models
 from ..datetime_utils import ensure_utc_datetime, utc_now, utc_now_naive
 from .incidente_eventos import registrar_evento_creado
+from .notificaciones_service import crear_desde_incidente_evento
 
 
 ESTADOS_INCIDENTE_DUPLICADO = ("abierto", "asignado", "en_proceso", "resuelto")
@@ -93,11 +94,17 @@ def _crear_incidente_automatico(
 
     db.add(incidente)
     db.flush()
-    registrar_evento_creado(
+    evento = registrar_evento_creado(
         db,
         incidente=incidente,
         actor=actor,
         origen="automatico",
+    )
+    crear_desde_incidente_evento(
+        db,
+        incidente=incidente,
+        evento=evento,
+        actor=actor,
     )
     if auto_commit:
         db.commit()

@@ -21,6 +21,7 @@ from ..services.incidente_eventos import (
     registrar_evento_creado,
     registrar_evento_resuelto,
 )
+from ..services.notificaciones_service import crear_desde_incidente_evento
 from ..services.incidentes_scope import (
     apply_incidente_visibility_scope,
     obtener_incidente_visible_o_404,
@@ -328,11 +329,17 @@ def crear_incidente(
     )
     db.add(nuevo_incidente)
     db.flush()
-    registrar_evento_creado(
+    evento = registrar_evento_creado(
         db,
         incidente=nuevo_incidente,
         actor=current_user,
         origen="manual",
+    )
+    crear_desde_incidente_evento(
+        db,
+        incidente=nuevo_incidente,
+        evento=evento,
+        actor=current_user,
     )
     db.commit()
     db.refresh(nuevo_incidente)
@@ -403,7 +410,7 @@ def actualizar_incidente(
             mensaje="Estado del incidente actualizado",
         )
     if cambio_asignacion:
-        registrar_evento_actualizado(
+        evento_asignacion = registrar_evento_actualizado(
             db,
             incidente=incidente,
             actor=current_user,
@@ -411,6 +418,13 @@ def actualizar_incidente(
             tipo_evento="asignacion_cambiada",
             mensaje="Asignación del incidente actualizada",
         )
+        if evento_asignacion is not None:
+            crear_desde_incidente_evento(
+                db,
+                incidente=incidente,
+                evento=evento_asignacion,
+                actor=current_user,
+            )
     if cambios_generales:
         registrar_evento_actualizado(
             db,
@@ -488,7 +502,7 @@ async def resolver_incidente(
     incidente.resuelto_en = utc_now_naive()
     incidente.cerrado_en = None
     incidente.actualizado_en = utc_now_naive()
-    registrar_evento_resuelto(
+    evento = registrar_evento_resuelto(
         db,
         incidente=incidente,
         actor=current_user,
@@ -496,6 +510,12 @@ async def resolver_incidente(
         foto_url=foto_resolucion_url,
         foto_public_id=foto_resolucion_public_id,
         estado_anterior=estado_anterior,
+    )
+    crear_desde_incidente_evento(
+        db,
+        incidente=incidente,
+        evento=evento,
+        actor=current_user,
     )
 
     db.commit()
@@ -567,11 +587,17 @@ def cerrar_incidente(
         incidente.resuelto_en = utc_now_naive()
     incidente.cerrado_en = utc_now_naive()
     incidente.actualizado_en = utc_now_naive()
-    registrar_evento_cerrado(
+    evento = registrar_evento_cerrado(
         db,
         incidente=incidente,
         actor=current_user,
         estado_anterior=estado_anterior,
+    )
+    crear_desde_incidente_evento(
+        db,
+        incidente=incidente,
+        evento=evento,
+        actor=current_user,
     )
 
     db.commit()
@@ -622,6 +648,12 @@ async def comentar_incidente(
         mensaje=mensaje,
         foto_url=foto_url,
         foto_public_id=foto_public_id,
+    )
+    crear_desde_incidente_evento(
+        db,
+        incidente=incidente,
+        evento=evento,
+        actor=current_user,
     )
 
     db.commit()
