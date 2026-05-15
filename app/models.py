@@ -2,6 +2,7 @@ from sqlalchemy import Column, String, Text, TIMESTAMP, ForeignKey, Numeric, Tab
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 import uuid
 from .database import Base
+from .datetime_utils import utc_now_naive
 from datetime import datetime
 from uuid import uuid4
 from sqlalchemy.orm import relationship
@@ -360,4 +361,53 @@ class IncidenteEvento(Base):
 
     incidente = relationship("Incidente", back_populates="eventos", foreign_keys=[incidente_id])
     actor = relationship("Usuario", foreign_keys=[actor_id])
+    company = relationship("Company", foreign_keys=[company_id])
+
+
+class Notificacion(Base):
+    __tablename__ = "notificaciones"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    company_id = Column(UUID(as_uuid=True), ForeignKey("companies.id", ondelete="CASCADE"), nullable=False)
+    actor_id = Column(UUID(as_uuid=True), ForeignKey("usuarios.id", ondelete="SET NULL"), nullable=True)
+    tipo = Column(Text, nullable=False)
+    categoria = Column(Text, nullable=False)
+    evento = Column(Text, nullable=False)
+    severity = Column(Text, nullable=False, default="info")
+    titulo = Column(Text, nullable=False)
+    mensaje = Column(Text, nullable=False)
+    source_type = Column(Text, nullable=True)
+    source_id = Column(UUID(as_uuid=True), nullable=True)
+    source_event_id = Column(UUID(as_uuid=True), nullable=True)
+    deep_link = Column(Text, nullable=True)
+    metadata_json = Column("metadata", JSONB, nullable=False, default=dict)
+    dedupe_key = Column(Text, nullable=True)
+    creado_en = Column(DateTime, default=utc_now_naive, nullable=False)
+
+    company = relationship("Company", foreign_keys=[company_id])
+    actor = relationship("Usuario", foreign_keys=[actor_id])
+    destinatarios = relationship(
+        "NotificacionDestinatario",
+        back_populates="notificacion",
+        cascade="all, delete-orphan",
+    )
+
+
+class NotificacionDestinatario(Base):
+    __tablename__ = "notificacion_destinatarios"
+    __table_args__ = (
+        UniqueConstraint("notification_id", "user_id", name="uq_notificacion_destinatario"),
+    )
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    notification_id = Column(UUID(as_uuid=True), ForeignKey("notificaciones.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("usuarios.id", ondelete="CASCADE"), nullable=False)
+    company_id = Column(UUID(as_uuid=True), ForeignKey("companies.id", ondelete="CASCADE"), nullable=False)
+    read_at = Column(DateTime, nullable=True)
+    delivered_at = Column(DateTime, default=utc_now_naive, nullable=False)
+    hidden_at = Column(DateTime, nullable=True)
+    creado_en = Column(DateTime, default=utc_now_naive, nullable=False)
+
+    notificacion = relationship("Notificacion", back_populates="destinatarios", foreign_keys=[notification_id])
+    usuario = relationship("Usuario", foreign_keys=[user_id])
     company = relationship("Company", foreign_keys=[company_id])

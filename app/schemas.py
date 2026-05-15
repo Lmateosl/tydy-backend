@@ -609,6 +609,66 @@ class IncidenteTimelineResponse(BaseModel):
     total: int = 0
 
 
+class NotificacionActorResponse(BaseModel):
+    id: Optional[UUID] = None
+    nombre: Optional[str] = None
+    rol: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+
+class NotificacionItemResponse(BaseModel):
+    id: UUID
+    notification_id: UUID
+    user_id: UUID
+    tipo: str
+    categoria: str
+    evento: str
+    severity: str
+    titulo: str
+    mensaje: str
+    source_type: Optional[str] = None
+    source_id: Optional[UUID] = None
+    source_event_id: Optional[UUID] = None
+    deep_link: Optional[str] = None
+    metadata: dict = Field(default_factory=dict)
+    actor: Optional[NotificacionActorResponse] = None
+    read_at: Optional[datetime] = None
+    delivered_at: datetime
+    created_at: datetime
+
+
+class NotificacionesListResponse(BaseModel):
+    items: list[NotificacionItemResponse] = Field(default_factory=list)
+    total: int = 0
+
+
+class NotificacionesUnreadCountResponse(BaseModel):
+    unread_count: int
+
+
+class NotificacionMarcarLeidaResponse(BaseModel):
+    detail: str
+    read_at: datetime
+
+
+class NotificacionMarcarTodasLeidasResponse(BaseModel):
+    detail: str
+    updated: int
+
+
+class AlertaManualCreate(BaseModel):
+    titulo: str = Field(min_length=1, max_length=140)
+    mensaje: str = Field(min_length=1, max_length=2000)
+    severity: Literal["info", "warning", "critical"] = "info"
+    audiencia_tipo: Literal["all", "role", "empresa", "locacion", "user"]
+    rol: Optional[Literal["admin", "supervisor", "empleado"]] = None
+    empresa_id: Optional[UUID] = None
+    locacion_id: Optional[UUID] = None
+    user_ids: list[UUID] = Field(default_factory=list)
+
+
 class DashboardRiesgoLocacionItem(BaseModel):
     locacion_id: Optional[UUID] = None
     locacion_nombre: str
