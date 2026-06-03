@@ -1,6 +1,7 @@
 """Helpers for company AI settings."""
 
 import uuid
+from fastapi import HTTPException
 from sqlalchemy import event
 from sqlalchemy.orm import Session
 
@@ -53,6 +54,13 @@ def get_company_ai_settings(db, company_id):
     )
 
 
+def get_company_ai_settings_or_403(db, company_id):
+    settings = get_company_ai_settings(db, company_id)
+    if not settings:
+        settings = ensure_company_ai_settings(db, company_id)
+    return validate_ai_reports_enabled(settings)
+
+
 def create_default_company_ai_settings(db, company_id):
     settings = CompanyAISettings(**_build_settings_payload(company_id))
     db.add(settings)
@@ -82,6 +90,28 @@ def enable_dev_ai_settings(db, company_id):
         setattr(settings, key, value)
     settings.updated_at = utc_now_naive()
     db.flush()
+    return settings
+
+
+def validate_ai_reports_enabled(settings):
+    if not settings.ai_enabled:
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "code": "AI_DISABLED",
+                "message": "AI Reports está deshabilitado para esta compañía",
+            },
+        )
+
+    if settings.reports_monthly_limit <= 0:
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "code": "AI_DISABLED",
+                "message": "AI Reports no tiene cupo mensual habilitado para esta compañía",
+            },
+        )
+
     return settings
 
 

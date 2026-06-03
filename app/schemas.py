@@ -892,8 +892,7 @@ class AISettingsResponse(BaseModel):
         from_attributes = True
 
 
-class AIUsageCurrentResponse(BaseModel):
-    company_id: UUID
+class AIUsageSnapshot(BaseModel):
     usage_year: int
     usage_month: int
     period_start: datetime
@@ -909,3 +908,19 @@ class AIUsageCurrentResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class AIUsageRemaining(BaseModel):
+    reports_remaining: int
+    tokens_remaining: int
+    cost_remaining_usd: float
+
+
+class AIUsageCurrentResponse(BaseModel):
+    company_id: UUID
+    month_label: str
+    usage_year: int
+    usage_month: int
+    settings: AISettingsResponse
+    usage: AIUsageSnapshot
+    remaining: AIUsageRemaining
