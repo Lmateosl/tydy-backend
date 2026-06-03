@@ -95,3 +95,67 @@ def resolve_report_scope(db, current_user, scope_type, scope_entity_id):
         )
 
     raise HTTPException(status_code=400, detail="scope_type no válido")
+
+
+def resolve_persisted_report_scope(db, company_id, scope_type, scope_entity_id):
+    if scope_type == "company":
+        return ReportScopeContext(
+            company_id=company_id,
+            scope_type=scope_type,
+            scope_entity_id=None,
+            scope_label="Compañía",
+        )
+
+    if scope_type == "empresa":
+        empresa = (
+            db.query(models.Empresa)
+            .filter(
+                models.Empresa.id == scope_entity_id,
+                models.Empresa.company_id == company_id,
+            )
+            .first()
+        )
+        if not empresa:
+            raise HTTPException(status_code=404, detail="Empresa no encontrada")
+
+        locacion_ids = [
+            row[0]
+            for row in db.query(models.Locacion.id).filter(
+                models.Locacion.empresa_id == empresa.id,
+                models.Locacion.company_id == company_id,
+            ).all()
+        ]
+
+        return ReportScopeContext(
+            company_id=company_id,
+            scope_type=scope_type,
+            scope_entity_id=empresa.id,
+            scope_label=empresa.nombre,
+            visible_empresa_ids=[empresa.id],
+            visible_locacion_ids=locacion_ids,
+        )
+
+    if scope_type == "locacion":
+        locacion = (
+            db.query(models.Locacion)
+            .filter(
+                models.Locacion.id == scope_entity_id,
+                models.Locacion.company_id == company_id,
+            )
+            .first()
+        )
+        if not locacion:
+            raise HTTPException(status_code=404, detail="Locación no encontrada")
+
+        visible_empresa_ids = [locacion.empresa_id] if locacion.empresa_id else []
+
+        return ReportScopeContext(
+            company_id=company_id,
+            scope_type=scope_type,
+            scope_entity_id=locacion.id,
+            scope_label=locacion.nombre,
+            visible_empresa_ids=visible_empresa_ids,
+            visible_locacion_ids=[locacion.id],
+        )
+
+    raise HTTPException(status_code=400, detail="scope_type no válido")

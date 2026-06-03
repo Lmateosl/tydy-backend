@@ -827,6 +827,11 @@ class AIReportStatusResponse(BaseModel):
     error_message: Optional[str] = None
 
 
+class AIReportGenerateResponse(BaseModel):
+    id: UUID
+    status: Literal["queued", "processing", "completed", "failed"]
+
+
 class AIReportListItem(BaseModel):
     id: UUID
     scope_type: Literal["company", "empresa", "locacion"]
@@ -843,6 +848,13 @@ class AIReportListItem(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class AIReportsListResponse(BaseModel):
+    items: List[AIReportListItem] = Field(default_factory=list)
+    total: int
+    limit: int
+    offset: int
 
 
 class AIReportDetailResponse(BaseModel):
