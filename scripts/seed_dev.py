@@ -1,13 +1,14 @@
 import argparse
 import sys
-from datetime import datetime
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+from app.ai.settings_service import enable_dev_ai_settings
 from app.database import Base, SessionLocal, engine
+from app.datetime_utils import utc_now_naive
 from app.models import Company, Usuario
 from app.utils import hash_password
 
@@ -34,6 +35,8 @@ def seed_dev(admin_password: str):
             db.add(company)
             db.flush()
 
+        enable_dev_ai_settings(db, company.id)
+
         admin = db.query(Usuario).filter(Usuario.email == DEFAULT_ADMIN_EMAIL).first()
         if not admin:
             admin = Usuario(
@@ -44,7 +47,7 @@ def seed_dev(admin_password: str):
                 numero="0000000000",
                 direccion="Local development",
                 identificacion="DEV-ADMIN",
-                creado_en=datetime.utcnow(),
+                creado_en=utc_now_naive(),
                 company_id=company.id,
             )
             db.add(admin)
