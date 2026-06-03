@@ -790,3 +790,122 @@ class PortalClienteResumenResponse(BaseModel):
     seguimientos_abiertos: int = 0
     seguimientos_resueltos: int = 0
     tiempo_promedio_respuesta_horas: float = 0.0
+
+
+class AIReportGenerateRequest(BaseModel):
+    scope_type: Literal["company", "empresa", "locacion"]
+    scope_entity_id: Optional[UUID] = None
+    period_type: Literal["weekly", "monthly"]
+    period_start: datetime
+    period_end: datetime
+
+
+class AIReportCitation(BaseModel):
+    source_type: Literal["metric", "locacion", "area", "incidente_group", "feedback_group"]
+    source_id: str
+    label: str
+
+
+class AIReportOutput(BaseModel):
+    title: str
+    period_label: str
+    executive_summary: str
+    key_metrics: dict = Field(default_factory=dict)
+    problem_areas: List[dict] = Field(default_factory=list)
+    recommendations: List[dict | str] = Field(default_factory=list)
+    caveats: List[str] = Field(default_factory=list)
+    citations: List[AIReportCitation] = Field(default_factory=list)
+
+
+class AIReportStatusResponse(BaseModel):
+    id: UUID
+    status: Literal["queued", "processing", "completed", "failed"]
+    created_at: datetime
+    updated_at: datetime
+    completed_at: Optional[datetime] = None
+    failed_at: Optional[datetime] = None
+    error_message: Optional[str] = None
+
+
+class AIReportListItem(BaseModel):
+    id: UUID
+    scope_type: Literal["company", "empresa", "locacion"]
+    scope_entity_id: Optional[UUID] = None
+    period_type: Literal["weekly", "monthly"]
+    period_start: datetime
+    period_end: datetime
+    status: Literal["queued", "processing", "completed", "failed"]
+    provider: str
+    model: str
+    requested_by: UUID
+    created_at: datetime
+    completed_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+class AIReportDetailResponse(BaseModel):
+    id: UUID
+    company_id: UUID
+    scope_type: Literal["company", "empresa", "locacion"]
+    scope_entity_id: Optional[UUID] = None
+    period_type: Literal["weekly", "monthly"]
+    period_start: datetime
+    period_end: datetime
+    status: Literal["queued", "processing", "completed", "failed"]
+    prompt_template_key: str
+    prompt_template_version: str
+    provider: str
+    model: str
+    requested_by: UUID
+    request_fingerprint: Optional[str] = None
+    report_json: Optional[dict] = None
+    facts_json: Optional[dict] = None
+    citations_json: Optional[List[dict]] = None
+    langfuse_trace_id: Optional[str] = None
+    error_message: Optional[str] = None
+    generation_block_reason: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+    completed_at: Optional[datetime] = None
+    failed_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+class AISettingsResponse(BaseModel):
+    company_id: UUID
+    ai_enabled: bool
+    plan_name: Optional[str] = None
+    reports_monthly_limit: int
+    monthly_token_limit: int
+    monthly_cost_limit_usd: float
+    reset_day: int
+    hard_block_on_limit: bool
+    dedupe_window_hours: int
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class AIUsageCurrentResponse(BaseModel):
+    company_id: UUID
+    usage_year: int
+    usage_month: int
+    period_start: datetime
+    period_end: datetime
+    reports_generated_count: int
+    prompt_tokens: int
+    completion_tokens: int
+    total_tokens: int
+    total_cost_usd: float
+    last_report_at: Optional[datetime] = None
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True

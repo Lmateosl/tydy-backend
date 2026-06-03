@@ -33,6 +33,10 @@ class Company(Base):
     feedbacks_qr = relationship("FeedbackQR", back_populates="own_company")
     feedbacks = relationship("Feedback", back_populates="own_company")
     cliente_empresas = relationship("ClienteEmpresa", back_populates="company")
+    ai_settings = relationship("CompanyAISettings", back_populates="company", uselist=False, cascade="all, delete-orphan")
+    ai_usage_monthly = relationship("CompanyAIUsageMonthly", back_populates="company", cascade="all, delete-orphan")
+    ai_reports = relationship("AIReport", back_populates="company", cascade="all, delete-orphan")
+    ai_report_runs = relationship("AIReportRun", back_populates="company", cascade="all, delete-orphan")
 
 class Usuario(Base):
     __tablename__ = "usuarios"
@@ -78,6 +82,7 @@ class Usuario(Base):
     creador = relationship("Usuario", remote_side=[id], backref="usuarios_creados", foreign_keys=[creado_por])
     own_company = relationship("Company", back_populates="usuarios", foreign_keys=[company_id])
     area = relationship("Area", back_populates="usuarios", foreign_keys=[area_id])
+    ai_reports_requested = relationship("AIReport", back_populates="requester", foreign_keys="AIReport.requested_by")
 
 class Empresa(Base):
     __tablename__ = "empresas"
@@ -415,3 +420,115 @@ class NotificacionDestinatario(Base):
     notificacion = relationship("Notificacion", back_populates="destinatarios", foreign_keys=[notification_id])
     usuario = relationship("Usuario", foreign_keys=[user_id])
     company = relationship("Company", foreign_keys=[company_id])
+
+
+class CompanyAISettings(Base):
+    __tablename__ = "company_ai_settings"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    company_id = Column(UUID(as_uuid=True), ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, unique=True)
+    ai_enabled = Column(Boolean, nullable=False, default=False)
+    plan_name = Column(Text, nullable=True)
+    reports_monthly_limit = Column(Integer, nullable=False, default=0)
+    monthly_token_limit = Column(Integer, nullable=False, default=0)
+    monthly_cost_limit_usd = Column(Numeric(12, 6), nullable=False, default=0)
+    reset_day = Column(Integer, nullable=False, default=1)
+    hard_block_on_limit = Column(Boolean, nullable=False, default=True)
+    dedupe_window_hours = Column(Integer, nullable=False, default=24)
+    created_at = Column(DateTime, default=utc_now_naive, nullable=False)
+    updated_at = Column(DateTime, default=utc_now_naive, nullable=False)
+
+    company = relationship("Company", back_populates="ai_settings", foreign_keys=[company_id])
+
+
+class CompanyAIUsageMonthly(Base):
+    __tablename__ = "company_ai_usage_monthly"
+    __table_args__ = (
+        UniqueConstraint("company_id", "usage_year", "usage_month", name="uq_company_ai_usage_monthly_company_period"),
+    )
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    company_id = Column(UUID(as_uuid=True), ForeignKey("companies.id", ondelete="CASCADE"), nullable=False)
+    usage_year = Column(Integer, nullable=False)
+    usage_month = Column(Integer, nullable=False)
+    period_start = Column(DateTime, nullable=False)
+    period_end = Column(DateTime, nullable=False)
+    reports_generated_count = Column(Integer, nullable=False, default=0)
+    prompt_tokens = Column(Integer, nullable=False, default=0)
+    completion_tokens = Column(Integer, nullable=False, default=0)
+    total_tokens = Column(Integer, nullable=False, default=0)
+    total_cost_usd = Column(Numeric(12, 6), nullable=False, default=0)
+    last_report_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=utc_now_naive, nullable=False)
+    updated_at = Column(DateTime, default=utc_now_naive, nullable=False)
+
+    company = relationship("Company", back_populates="ai_usage_monthly", foreign_keys=[company_id])
+
+
+class AIReport(Base):
+    __tablename__ = "ai_reports"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    company_id = Column(UUID(as_uuid=True), ForeignKey("companies.id", ondelete="CASCADE"), nullable=False)
+    scope_type = Column(Text, nullable=False)
+    scope_entity_id = Column(UUID(as_uuid=True), nullable=True)
+    period_type = Column(Text, nullable=False)
+    period_start = Column(DateTime, nullable=False)
+    period_end = Column(DateTime, nullable=False)
+    status = Column(Text, nullable=False, default="queued")
+    prompt_template_key = Column(Text, nullable=False)
+    prompt_template_version = Column(Text, nullable=False)
+    provider = Column(Text, nullable=False)
+    model = Column(Text, nullable=False)
+    requested_by = Column(UUID(as_uuid=True), ForeignKey("usuarios.id", ondelete="RESTRICT"), nullable=False)
+    request_fingerprint = Column(Text, nullable=True)
+    report_json = Column(JSONB, nullable=True)
+    facts_json = Column(JSONB, nullable=True)
+    citations_json = Column(JSONB, nullable=True)
+    langfuse_trace_id = Column(Text, nullable=True)
+    error_message = Column(Text, nullable=True)
+    generation_block_reason = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=utc_now_naive, nullable=False)
+    updated_at = Column(DateTime, default=utc_now_naive, nullable=False)
+    completed_at = Column(DateTime, nullable=True)
+    failed_at = Column(DateTime, nullable=True)
+
+    company = relationship("Company", back_populates="ai_reports", foreign_keys=[company_id])
+    requester = relationship("Usuario", back_populates="ai_reports_requested", foreign_keys=[requested_by])
+    runs = relationship("AIReportRun", back_populates="report", cascade="all, delete-orphan")
+
+
+class AIReportRun(Base):
+    __tablename__ = "ai_report_runs"
+    __table_args__ = (
+        UniqueConstraint("report_id", "run_number", name="uq_ai_report_runs_report_run"),
+    )
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    report_id = Column(UUID(as_uuid=True), ForeignKey("ai_reports.id", ondelete="CASCADE"), nullable=False)
+    company_id = Column(UUID(as_uuid=True), ForeignKey("companies.id", ondelete="CASCADE"), nullable=False)
+    run_number = Column(Integer, nullable=False)
+    status = Column(Text, nullable=False, default="queued")
+    provider = Column(Text, nullable=False)
+    model = Column(Text, nullable=False)
+    prompt_template_key = Column(Text, nullable=False)
+    prompt_template_version = Column(Text, nullable=False)
+    input_facts_json = Column(JSONB, nullable=False, default=dict)
+    output_json = Column(JSONB, nullable=True)
+    raw_response_json = Column(JSONB, nullable=True)
+    usage_prompt_tokens = Column(Integer, nullable=True)
+    usage_completion_tokens = Column(Integer, nullable=True)
+    usage_total_tokens = Column(Integer, nullable=True)
+    estimated_cost_usd = Column(Numeric(12, 6), nullable=True)
+    billing_counted = Column(Boolean, nullable=False, default=False)
+    latency_ms = Column(Integer, nullable=True)
+    langfuse_trace_id = Column(Text, nullable=True)
+    langfuse_observation_id = Column(Text, nullable=True)
+    error_message = Column(Text, nullable=True)
+    started_at = Column(DateTime, nullable=True)
+    completed_at = Column(DateTime, nullable=True)
+    failed_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=utc_now_naive, nullable=False)
+
+    report = relationship("AIReport", back_populates="runs", foreign_keys=[report_id])
+    company = relationship("Company", back_populates="ai_report_runs", foreign_keys=[company_id])
