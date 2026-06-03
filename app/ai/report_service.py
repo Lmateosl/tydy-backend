@@ -5,6 +5,13 @@ from datetime import timedelta
 
 from app import models
 from app.ai.guardrails import validate_report_output
+from app.ai.langfuse_service import (
+    create_observation_or_generation,
+    create_report_trace,
+    flush_langfuse,
+    update_trace_failure,
+    update_trace_success,
+)
 from app.ai.openai_client import generate_report_json
 from app.ai.prompts import build_report_messages, get_report_prompt_template
 from app.ai.report_queries import build_report_facts
@@ -133,6 +140,7 @@ def create_ai_report_job(
 
 def process_ai_report(report_id, run_id):
     db = SessionLocal()
+    trace = None
     try:
         report = (
             db.query(models.AIReport)
@@ -147,6 +155,23 @@ def process_ai_report(report_id, run_id):
         if not report or not run:
             return
 
+        trace = create_report_trace(
+            report_id=report.id,
+            run_id=run.id,
+            company_id=report.company_id,
+            scope_type=report.scope_type,
+            scope_entity_id=report.scope_entity_id,
+            period_type=report.period_type,
+            provider=report.provider,
+            model=report.model,
+            prompt_template_key=report.prompt_template_key,
+            prompt_template_version=report.prompt_template_version,
+        )
+        if trace:
+            trace_id = getattr(trace, "id", None)
+            report.langfuse_trace_id = trace_id
+            run.langfuse_trace_id = trace_id
+
         report.status = "processing"
         report.updated_at = utc_now_naive()
         run.status = "processing"
@@ -159,6 +184,16 @@ def process_ai_report(report_id, run_id):
             report.scope_type,
             report.scope_entity_id,
         )
+        create_observation_or_generation(
+            trace=trace,
+            name="scope_resolution",
+            metadata={
+                "scope_type": scope_context.scope_type,
+                "scope_entity_id": str(scope_context.scope_entity_id) if scope_context.scope_entity_id else None,
+                "visible_empresa_ids_count": len(scope_context.visible_empresa_ids),
+                "visible_locacion_ids_count": len(scope_context.visible_locacion_ids),
+            },
+        )
         facts_json = build_report_facts(
             db,
             scope_context=scope_context,
@@ -166,12 +201,64 @@ def process_ai_report(report_id, run_id):
             period_end=report.period_end,
             period_type=report.period_type,
         )
+        create_observation_or_generation(
+            trace=trace,
+            name="facts_query",
+            metadata={
+                "summary_metrics": facts_json.get("summary_metrics", {}),
+                "verification_metrics": facts_json.get("verification_metrics", {}),
+                "problem_locations_count": len(facts_json.get("problem_locations", [])),
+                "problem_areas_count": len(facts_json.get("problem_areas", [])),
+                "incident_breakdown_count": len(facts_json.get("incident_breakdown", [])),
+                "feedback_breakdown_count": len(facts_json.get("feedback_breakdown", [])),
+                "source_index_count": len(facts_json.get("source_index", [])),
+            },
+        )
         report.facts_json = facts_json
         run.input_facts_json = facts_json
         report.updated_at = utc_now_naive()
         db.commit()
 
         generation_result = generate_report_from_facts(db, facts_json, report.period_type)
+        observation = create_observation_or_generation(
+            trace=trace,
+            name="openai_generation",
+            metadata={
+                "input_size_chars": len(str(facts_json)),
+                "source_index_count": len(facts_json.get("source_index", [])),
+                "problem_locations_count": len(facts_json.get("problem_locations", [])),
+                "problem_areas_count": len(facts_json.get("problem_areas", [])),
+                "model": generation_result["model"],
+                "latency_ms": generation_result["latency_ms"],
+                "estimated_cost_usd": generation_result["estimated_cost_usd"],
+            },
+            input_payload={
+                "period_type": report.period_type,
+                "summary_metrics": facts_json.get("summary_metrics", {}),
+                "verification_metrics": facts_json.get("verification_metrics", {}),
+            },
+            output_payload={
+                "title": generation_result["output_json"].get("title"),
+                "citations_count": len(generation_result["output_json"].get("citations", [])),
+                "recommendations_count": len(generation_result["output_json"].get("recommendations", [])),
+            },
+            usage={
+                "input": generation_result["prompt_tokens"],
+                "output": generation_result["completion_tokens"],
+                "total": generation_result["total_tokens"],
+            },
+        )
+        if observation:
+            run.langfuse_observation_id = getattr(observation, "id", None)
+
+        create_observation_or_generation(
+            trace=trace,
+            name="guardrails_validation",
+            metadata={
+                "citations_count": len(generation_result["output_json"].get("citations", [])),
+                "recommendations_count": len(generation_result["output_json"].get("recommendations", [])),
+            },
+        )
 
         report.report_json = generation_result["output_json"]
         report.citations_json = generation_result["output_json"].get("citations", [])
@@ -192,6 +279,16 @@ def process_ai_report(report_id, run_id):
         run.completed_at = utc_now_naive()
         run.error_message = None
 
+        create_observation_or_generation(
+            trace=trace,
+            name="persistence",
+            metadata={
+                "report_status": report.status,
+                "run_status": run.status,
+                "citations_count": len(report.citations_json or []),
+            },
+        )
+
         usage_settings_reset_day = 1
         settings = (
             db.query(models.CompanyAISettings)
@@ -210,7 +307,32 @@ def process_ai_report(report_id, run_id):
             reset_day=usage_settings_reset_day,
         )
         increment_usage_after_success(db, usage, run)
+        create_observation_or_generation(
+            trace=trace,
+            name="usage_update",
+            metadata={
+                "reports_generated_count": usage.reports_generated_count,
+                "prompt_tokens": usage.prompt_tokens,
+                "completion_tokens": usage.completion_tokens,
+                "total_tokens": usage.total_tokens,
+                "total_cost_usd": float(usage.total_cost_usd or 0),
+            },
+        )
         db.commit()
+        update_trace_success(
+            trace=trace,
+            output_payload={
+                "status": "completed",
+                "report_id": str(report.id),
+                "run_id": str(run.id),
+            },
+            metadata={
+                "report_status": report.status,
+                "run_status": run.status,
+                "usage_total_tokens": run.usage_total_tokens,
+                "estimated_cost_usd": float(run.estimated_cost_usd or 0),
+            },
+        )
     except Exception as exc:
         db.rollback()
         report = db.query(models.AIReport).filter(models.AIReport.id == report_id).first()
@@ -225,7 +347,16 @@ def process_ai_report(report_id, run_id):
             run.error_message = str(exc)
             run.failed_at = utc_now_naive()
         db.commit()
+        update_trace_failure(
+            trace=trace,
+            error_message=str(exc),
+            metadata={
+                "report_id": str(report_id),
+                "run_id": str(run_id),
+            },
+        )
     finally:
+        flush_langfuse()
         db.close()
 
 
