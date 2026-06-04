@@ -168,7 +168,7 @@ def process_ai_report(report_id, run_id):
             prompt_template_version=report.prompt_template_version,
         )
         if trace:
-            trace_id = getattr(trace, "id", None)
+            trace_id = getattr(trace, "trace_id", None)
             report.langfuse_trace_id = trace_id
             run.langfuse_trace_id = trace_id
 
